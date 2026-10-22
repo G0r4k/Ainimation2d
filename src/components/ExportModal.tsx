@@ -43,6 +43,21 @@ export function ExportModal({ isOpen, onClose }: Props) {
         bg.gradientColors.forEach((c, i) => grad.addColorStop(i / (bg.gradientColors!.length - 1), c));
         ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
+      else if ((bg.type === 'image' || bg.type === 'parallax') && bg.assetId) {
+        const asset = store.project.assets.find(a => a.id === bg.assetId);
+        if (asset) {
+          const img = new Image();
+          img.src = asset.src;
+          if (img.complete) {
+            const canvasRatio = canvas.width / canvas.height;
+            const imgRatio = img.width / img.height;
+            let dw: number, dh: number, ox: number, oy: number;
+            if (imgRatio > canvasRatio) { dh = canvas.height; dw = img.width * (canvas.height / img.height); ox = (canvas.width - dw) / 2; oy = 0; }
+            else { dw = canvas.width; dh = img.height * (canvas.width / img.width); ox = 0; oy = (canvas.height - dh) / 2; }
+            ctx.drawImage(img, ox, oy, dw, dh);
+          }
+        }
+      }
       ctx.restore();
     });
     // Characters
@@ -68,6 +83,25 @@ export function ExportModal({ isOpen, onClose }: Props) {
         ctx.strokeStyle = bone.color; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.stroke();
         ctx.beginPath(); ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2); ctx.fillStyle = bone.color; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
         ctx.beginPath(); ctx.arc(end.x, end.y, 3, 0, Math.PI * 2); ctx.fillStyle = bone.color; ctx.fill();
+      });
+      // Draw slots/sprites
+      c.slots.forEach(slot => {
+        if (!slot.assetId) return;
+        const bone = boneMap.get(slot.boneId);
+        if (!bone || !bone.visible) return;
+        const asset = store.project.assets.find(a => a.id === slot.assetId);
+        if (!asset) return;
+        const img = new Image();
+        img.src = asset.src;
+        if (img.complete) {
+          ctx.save();
+          ctx.translate(bone.globalTransform.position.x + slot.offset.x, bone.globalTransform.position.y + slot.offset.y);
+          ctx.rotate(bone.globalTransform.rotation + slot.rotation);
+          ctx.scale(bone.globalTransform.scale.x * slot.scale.x, bone.globalTransform.scale.y * slot.scale.y);
+          ctx.globalAlpha = slot.opacity;
+          ctx.drawImage(img, -asset.width / 2, -asset.height / 2, asset.width, asset.height);
+          ctx.restore();
+        }
       });
       ctx.restore();
     });

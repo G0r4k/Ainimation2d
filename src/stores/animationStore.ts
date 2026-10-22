@@ -152,6 +152,9 @@ interface AppState {
   // Asset actions
   addAsset: (asset: AssetData) => void;
   removeAsset: (id: string) => void;
+  addSlot: (boneId: string, assetId: string | null) => void;
+  updateSlot: (slotId: string, updates: Partial<SlotData>) => void;
+  removeSlot: (slotId: string) => void;
   // Playback
   setCurrentTime: (t: number) => void;
   setPlaying: (p: boolean) => void;
@@ -443,6 +446,35 @@ export const useAnimationStore = create<AppState>((set, get) => ({
     const { project } = get();
     project.assets = project.assets.filter(a => a.id !== id);
     set({ project: { ...project } });
+  },
+  addSlot: (boneId: string, assetId: string | null) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const slot: SlotData = {
+      id: uuidv4(),
+      boneId,
+      assetId,
+      offset: { x: 0, y: 0 },
+      scale: { x: 1, y: 1 },
+      rotation: 0,
+      blendMode: 'normal',
+      opacity: 1,
+      zIndex: char.slots.length,
+    };
+    char.slots.push(slot);
+    set({ project: { ...get().project } });
+  },
+  updateSlot: (slotId: string, updates: Partial<SlotData>) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const slot = char.slots.find(s => s.id === slotId);
+    if (slot) { Object.assign(slot, updates); set({ project: { ...get().project } }); }
+  },
+  removeSlot: (slotId: string) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    char.slots = char.slots.filter(s => s.id !== slotId);
+    set({ project: { ...get().project } });
   },
 
   setCurrentTime: (t: number) => set({ currentTime: t }),

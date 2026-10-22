@@ -126,6 +126,15 @@ export function Canvas() {
         if (!bone.visible) return;
         drawBone(ctx, bone, boneMap, bone.id === store.selectedBoneId);
       });
+      // Draw slots (sprites attached to bones)
+      char.slots.forEach(slot => {
+        if (!slot.assetId) return;
+        const bone = boneMap.get(slot.boneId);
+        if (!bone || !bone.visible) return;
+        const asset = store.project.assets.find(a => a.id === slot.assetId);
+        if (!asset) return;
+        drawSlot(ctx, slot, bone, asset);
+      });
       ctx.restore();
     });
 
@@ -238,12 +247,79 @@ export function Canvas() {
   const handleMouseUp = () => setIsDragging(false);
   const handleWheel = (e: React.WheelEvent) => { e.preventDefault(); store.setZoom(store.zoom * (e.deltaY > 0 ? 0.9 : 1.1)); };
 
+  const [canvasDragOver, setCanvasDragOver] = useState(false);
+
+  const handleCanvasDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setCanvasDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const dropX = (e.clientX - rect.left - store.panOffset.x) / store.zoom;
+    const dropY = (e.clientY - rect.top - store.panOffset.y) / store.zoom;
+    
+    files.forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const src = ev.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const assetId = `asset_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+          store.addAsset({
+            id: assetId,
+            name: file.name.replace(/\.[^.]+$/, ''),
+            type: 'image',
+            src,
+            width: img.width,
+            height: img.height,
+          });
+          
+          // If a bone is selected, attach as sprite
+          if (store.selectedBoneId) {
+            store.addSlot(store.selectedBoneId, assetId);
+          } else {
+            // Otherwise add as background
+            store.addBackground({
+              name: file.name.replace(/\.[^.]+$/, ''),
+              type: 'image',
+              assetId,
+              visible: true,
+              opacity: 1,
+              zIndex: -1,
+            });
+          }
+        };
+        img.src = src;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   return (
-    <div ref={containerRef} className="flex-1 relative overflow-hidden bg-gray-900">
+    <div
+      ref={containerRef}
+      className={`flex-1 relative overflow-hidden bg-gray-900 transition-all ${canvasDragOver ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
+      onDrop={handleCanvasDrop}
+      onDragOver={(e) => { e.preventDefault(); setCanvasDragOver(true); }}
+      onDragLeave={() => setCanvasDragOver(false)}
+    >
       <canvas ref={canvasRef} width={canvasSize.width} height={canvasSize.height} className="absolute inset-0 cursor-crosshair" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onWheel={handleWheel} />
       <div className="absolute top-2 left-2 text-xs text-gray-400 bg-black/50 px-2 py-1 rounded pointer-events-none">
         Zoom: {(store.zoom * 100).toFixed(0)}% | Frame: {store.currentTime.toFixed(1)} | Cámara: {store.getActiveCamera()?.name || 'Ninguna'}
       </div>
+      {canvasDragOver && (
+        <div className="absolute inset-0 bg-blue-900/20 flex items-center justify-center pointer-events-none z-10">
+          <div className="bg-black/80 rounded-xl px-6 py-4 text-center">
+            <div className="text-4xl mb-2">📁</div>
+            <p className="text-sm text-white font-medium">Suelta la imagen aquí</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {store.selectedBoneId ? 'Se asociará al hueso seleccionado' : 'Se agregará como fondo'}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -275,7 +351,35 @@ function drawBackground(ctx: CanvasRenderingContext2D, bg: BackgroundLayer, size
     if (asset) {
       const img = new Image();
       img.src = asset.src;
-      ctx.drawImage(img, 0, 0, size.width, size.height);
+      if (img.complete) {
+        // Cover the canvas while maintaining aspect ratio
+        const canvasRatio = size.width / size.height;
+        const imgRatio = img.width / img.height;
+        let drawWidth, drawHeight, offsetX, offsetY;
+        if (imgRatio > canvasRatio) {
+          drawHeight = size.height;
+          drawWidth = img.width * (size.height / img.height);
+          offsetX = (size.width - drawWidth) / 2;
+          offsetY = 0;
+        } else {
+          drawWidth = size.width;
+          drawHeight = img.height * (size.width / img.width);
+          offsetX = 0;
+          offsetY = (size.height - drawHeight) / 2;
+        }
+        ctx.drawImage(img, offsetX - 200, offsetY - 200, drawWidth + 400, drawHeight + 400);
+      }
+    }
+  } else if (bg.type === 'parallax' && bg.assetId) {
+    const asset = assets.find(a => a.id === bg.assetId);
+    if (asset) {
+      const img = new Image();
+      img.src = asset.src;
+      if (img.complete) {
+        const factor = bg.parallaxFactor || { x: 0.5, y: 0.5 };
+        const offset = bg.scrollOffset || { x: 0, y: 0 };
+        ctx.drawImage(img, offset.x * factor.x, offset.y * factor.y, size.width, size.height);
+      }
     }
   }
   ctx.restore();
@@ -311,4 +415,38 @@ function drawBone(ctx: CanvasRenderingContext2D, bone: Bone, boneMap: Map<string
     ctx.fillStyle = 'rgba(255,100,100,0.8)';
     ctx.fillText('🔒', pos.x + 15, pos.y - 12);
   }
+}
+
+function drawSlot(
+  ctx: CanvasRenderingContext2D,
+  slot: { offset: { x: number; y: number }; scale: { x: number; y: number }; rotation: number; opacity: number; blendMode: string },
+  bone: Bone,
+  asset: { src: string; width: number; height: number }
+) {
+  // Load and cache image
+  const img = new Image();
+  img.src = asset.src;
+  
+  if (!img.complete) return; // Skip if not loaded yet
+
+  ctx.save();
+  
+  // Apply bone transform
+  ctx.translate(bone.globalTransform.position.x + slot.offset.x, bone.globalTransform.position.y + slot.offset.y);
+  ctx.rotate(bone.globalTransform.rotation + slot.rotation);
+  ctx.scale(
+    bone.globalTransform.scale.x * slot.scale.x,
+    bone.globalTransform.scale.y * slot.scale.y
+  );
+  
+  // Apply blend mode
+  ctx.globalCompositeOperation = slot.blendMode as GlobalCompositeOperation;
+  ctx.globalAlpha = slot.opacity;
+  
+  // Draw image centered on bone
+  const drawWidth = asset.width;
+  const drawHeight = asset.height;
+  ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  
+  ctx.restore();
 }

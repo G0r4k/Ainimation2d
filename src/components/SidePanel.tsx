@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAnimationStore } from '../stores/animationStore';
 import { AgentAPIConfig, AgentProvider } from '../engine/types';
 
@@ -58,6 +58,40 @@ export function SidePanel() {
               <div className="flex-1"><span className="text-[8px] text-green-400">Y</span><input type="number" value={Math.round(bone.localTransform.position.y)} onChange={e => store.updateBoneTransform(bone.id, { position: { ...bone.localTransform.position, y: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-xs rounded px-1 py-0.5 border border-gray-600 focus:outline-none" /></div>
             </div>
             <div><span className="text-[9px] text-gray-500">Rotación°</span><input type="number" value={Math.round(bone.localTransform.rotation * 180 / Math.PI * 10) / 10} onChange={e => store.updateBoneTransform(bone.id, { rotation: +e.target.value * Math.PI / 180 })} className="w-full bg-gray-700 text-gray-200 text-xs rounded px-2 py-1 border border-gray-600 focus:outline-none" /></div>
+            
+            {/* Slot properties */}
+            {char && (() => {
+              const slot = char.slots.find(s => s.boneId === bone.id);
+              if (!slot) return (
+                <div className="pt-2 border-t border-gray-700">
+                  <p className="text-[9px] text-gray-500">Sin sprite asociado</p>
+                  <p className="text-[8px] text-gray-600 mt-0.5">Selecciona un asset y click "🦴 Sprite"</p>
+                </div>
+              );
+              const asset = store.project.assets.find(a => a.id === slot.assetId);
+              return (
+                <div className="pt-2 border-t border-gray-700 space-y-1.5">
+                  <h4 className="text-[9px] text-purple-400 font-semibold">🖼️ Sprite</h4>
+                  {asset && (
+                    <div className="flex items-center gap-1.5">
+                      <img src={asset.src} alt={asset.name} className="w-8 h-8 object-contain bg-gray-700 rounded" />
+                      <span className="text-[9px] text-gray-300 truncate flex-1">{asset.name}</span>
+                      <button onClick={() => store.removeSlot(slot.id)} className="text-[9px] text-red-400 hover:text-red-300">✕</button>
+                    </div>
+                  )}
+                  <div className="flex gap-1">
+                    <div className="flex-1"><span className="text-[8px] text-red-400">Off X</span><input type="number" value={slot.offset.x} onChange={e => store.updateSlot(slot.id, { offset: { ...slot.offset, x: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none" /></div>
+                    <div className="flex-1"><span className="text-[8px] text-green-400">Off Y</span><input type="number" value={slot.offset.y} onChange={e => store.updateSlot(slot.id, { offset: { ...slot.offset, y: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none" /></div>
+                  </div>
+                  <div><span className="text-[8px] text-gray-500">Opacidad</span><input type="range" min="0" max="1" step="0.05" value={slot.opacity} onChange={e => store.updateSlot(slot.id, { opacity: +e.target.value })} className="w-full h-3" /></div>
+                  <div><span className="text-[8px] text-gray-500">Blend</span>
+                    <select value={slot.blendMode} onChange={e => store.updateSlot(slot.id, { blendMode: e.target.value as any })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none">
+                      <option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="lighter">Add</option>
+                    </select>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
         {keyframe && (
@@ -161,14 +195,54 @@ function renderBoneTree(bones: { id: string; name: string; parentId: string | nu
 function BackgroundsTab() {
   const store = useAnimationStore();
   const scene = store.getActiveScene();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   if (!scene) return null;
+
+  const handleImageImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const src = ev.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const assetId = `bg_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+          store.addAsset({
+            id: assetId,
+            name: file.name.replace(/\.[^.]+$/, ''),
+            type: 'image',
+            src,
+            width: img.width,
+            height: img.height,
+          });
+          store.addBackground({
+            name: file.name.replace(/\.[^.]+$/, ''),
+            type: 'image',
+            assetId,
+            visible: true,
+            opacity: 1,
+            zIndex: scene.backgrounds.length,
+          });
+        };
+        img.src = src;
+      };
+      reader.readAsDataURL(file);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   return (
     <div className="p-2">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-[10px] font-semibold text-gray-400 uppercase">Capas de Fondo</h3>
-        <button onClick={() => store.addBackground({ name: `Capa ${scene.backgrounds.length + 1}`, type: 'color', color: '#333333', zIndex: scene.backgrounds.length })} className="text-[10px] text-blue-400 hover:text-blue-300 bg-blue-900/20 px-2 py-0.5 rounded">+ Capa</button>
+        <div className="flex gap-1">
+          <button onClick={() => fileInputRef.current?.click()} className="text-[10px] text-green-400 hover:text-green-300 bg-green-900/20 px-2 py-0.5 rounded" title="Importar imagen como fondo">🖼️</button>
+          <button onClick={() => store.addBackground({ name: `Capa ${scene.backgrounds.length + 1}`, type: 'color', color: '#333333', zIndex: scene.backgrounds.length })} className="text-[10px] text-blue-400 hover:text-blue-300 bg-blue-900/20 px-2 py-0.5 rounded">+ Capa</button>
+        </div>
       </div>
+      <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageImport} className="hidden" />
       <div className="space-y-1">
         {[...scene.backgrounds].sort((a, b) => b.zIndex - a.zIndex).map(bg => (
           <div key={bg.id} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer ${bg.id === store.selectedBackgroundId ? 'bg-purple-900/30 border border-purple-700' : 'hover:bg-gray-700/50 border border-transparent'}`} onClick={() => store.selectBackground(bg.id)}>
