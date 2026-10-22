@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- UI humana deliberadamente mínima: solo estado crudo y stream de acciones.
+     No es un navegador para humanos; es una ventana de observación. -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>agent-browser · monitor</title>
+<style>
+  body { font-family: ui-monospace, monospace; background:#101214; color:#c9d1d9; margin:0; padding:1rem; font-size:13px; }
+  h1 { font-size:14px; margin:0 0 .5rem; color:#8b949e; }
+  pre { white-space:pre-wrap; word-break:break-all; background:#161b22; border:1px solid #30363d; padding:.75rem; border-radius:4px; }
+  .note { color:#6e7681; font-size:12px; }
+  table { border-collapse: collapse; width:100%; }
+  td, th { text-align:left; padding:2px 8px; border-bottom:1px solid #21262d; font-weight:normal; }
+</style>
+</head>
+<body>
+<h1>agent-browser — modo agente (API) · esta vista es solo lectura</h1>
+<p class="note">Interfaz primario: <code>POST /api/&lt;op&gt;</code> o WebSocket <code>/ws</code>. Ejecuta <code>ab help</code> para el catálogo de operaciones.</p>
+<pre id="status">cargando…</pre>
+<h1 style="margin-top:1rem">historial de acciones del agente</h1>
+<table id="hist"><thead><tr><th>hora</th><th>acción</th><th>objetivo</th></tr></thead><tbody></tbody></table>
+<script>
+async function refresh() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    document.getElementById('status').textContent = JSON.stringify(s, null, 2);
+  } catch (e) {
+    document.getElementById('status').textContent = 'servidor no disponible: ' + e;
+  }
+}
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>
