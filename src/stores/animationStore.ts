@@ -623,26 +623,60 @@ export const useAnimationStore = create<AppState>((set, get) => ({
 
   // Fetch available models for a provider
   fetchModelsForProvider: async (provider: AgentProvider, apiKey?: string, baseUrl?: string): Promise<AIModel[]> => {
+    const defaultUrls: Record<string, string> = {
+      ollama: 'http://localhost:11434',
+      openrouter: 'https://openrouter.ai/api/v1',
+      groq: 'https://api.groq.com/openai/v1',
+      openai: 'https://api.openai.com/v1',
+      claude: 'https://api.anthropic.com/v1',
+      huggingface: 'https://api-inference.huggingface.co',
+      opencode: 'https://api.opencode.ai/v1',
+    };
+
+    const url = baseUrl || defaultUrls[provider] || '';
+    
     try {
+      console.log(`Fetching models for ${provider} from ${url}`);
+      
       switch (provider) {
         case 'ollama': {
-          const url = baseUrl || 'http://localhost:11434';
-          const response = await fetch(`${url}/api/tags`);
+          const response = await fetch(`${url}/api/tags`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Ollama responded with status ${response.status}`);
+          }
+          
           const data = await response.json();
+          console.log('Ollama models response:', data);
+          
           return (data.models || []).map((m: any) => ({
             id: m.name,
             name: m.name,
             provider: 'ollama',
-            description: `Modelo local Ollama: ${m.name}`,
+            description: m.details ? `Modelo local: ${m.details.family || 'desconocido'}` : 'Modelo local Ollama',
             contextLength: m.details?.parameter_size ? parseInt(m.details.parameter_size) : undefined,
             capabilities: ['local', 'free', 'offline'],
-            status: 'stable',
+            status: 'stable' as const,
           }));
         }
         
         case 'openrouter': {
-          const response = await fetch('https://openrouter.ai/api/v1/models');
+          // OpenRouter no requiere API key para listar modelos
+          const response = await fetch(`${url}/models`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          
+          if (!response.ok) {
+            throw new Error(`OpenRouter responded with status ${response.status}`);
+          }
+          
           const data = await response.json();
+          console.log('OpenRouter models response:', data);
+          
           return (data.data || []).map((m: any) => ({
             id: m.id,
             name: m.name || m.id,
@@ -654,84 +688,129 @@ export const useAnimationStore = create<AppState>((set, get) => ({
               output: parseFloat(m.pricing.completion) * 1000000,
             } : undefined,
             capabilities: m.architecture?.modality ? [m.architecture.modality] : [],
-            status: 'stable',
+            status: 'stable' as const,
           }));
         }
         
         case 'groq': {
-          if (!apiKey) return [];
-          const response = await fetch('https://api.groq.com/openai/v1/models', {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
+          if (!apiKey) {
+            throw new Error('API key requerida para Groq');
+          }
+          
+          const response = await fetch(`${url}/models`, {
+            method: 'GET',
+            headers: { 
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
           });
+          
+          if (!response.ok) {
+            throw new Error(`Groq responded with status ${response.status}`);
+          }
+          
           const data = await response.json();
+          console.log('Groq models response:', data);
+          
           return (data.data || []).map((m: any) => ({
             id: m.id,
             name: m.id,
             provider: 'groq',
             description: `Modelo Groq: ${m.id}`,
             capabilities: ['fast', 'optimized'],
-            status: 'stable',
+            status: 'stable' as const,
           }));
         }
         
         case 'openai': {
-          if (!apiKey) return [];
-          const response = await fetch('https://api.openai.com/v1/models', {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
+          if (!apiKey) {
+            throw new Error('API key requerida para OpenAI');
+          }
+          
+          const response = await fetch(`${url}/models`, {
+            method: 'GET',
+            headers: { 
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
           });
+          
+          if (!response.ok) {
+            throw new Error(`OpenAI responded with status ${response.status}`);
+          }
+          
           const data = await response.json();
+          console.log('OpenAI models response:', data);
+          
           return (data.data || [])
-            .filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o1'))
+            .filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o1') || m.id.startsWith('chatgpt-'))
             .map((m: any) => ({
               id: m.id,
               name: m.id,
               provider: 'openai',
               description: `Modelo OpenAI: ${m.id}`,
               capabilities: ['multimodal', 'function-calling'],
-              status: 'stable',
+              status: 'stable' as const,
             }));
         }
         
         case 'claude': {
-          // Claude doesn't have a public models endpoint, return predefined list
+          // Claude no tiene endpoint público para listar modelos
+          // Retornamos lista predefinida
           return [
-            { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'claude', description: 'Modelo más capaz de Anthropic', contextLength: 200000, capabilities: ['vision', 'computer-use'], status: 'stable' },
-            { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', provider: 'claude', description: 'Modelo rápido y económico', contextLength: 200000, capabilities: ['fast', 'efficient'], status: 'stable' },
-            { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', provider: 'claude', description: 'Modelo premium de Anthropic', contextLength: 200000, capabilities: ['reasoning', 'analysis'], status: 'stable' },
+            { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'claude', description: 'Modelo más capaz de Anthropic', contextLength: 200000, capabilities: ['vision', 'computer-use'], status: 'stable' as const },
+            { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', provider: 'claude', description: 'Modelo rápido y económico', contextLength: 200000, capabilities: ['fast', 'efficient'], status: 'stable' as const },
+            { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', provider: 'claude', description: 'Modelo premium de Anthropic', contextLength: 200000, capabilities: ['reasoning', 'analysis'], status: 'stable' as const },
           ];
         }
         
         case 'huggingface': {
-          if (!apiKey) return [];
-          const response = await fetch('https://api-inference.huggingface.co/models?pipeline=text-generation', {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
+          if (!apiKey) {
+            throw new Error('API key requerida para HuggingFace');
+          }
+          
+          const response = await fetch(`${url}/models?pipeline=text-generation&limit=50`, {
+            method: 'GET',
+            headers: { 
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
           });
+          
+          if (!response.ok) {
+            throw new Error(`HuggingFace responded with status ${response.status}`);
+          }
+          
           const data = await response.json();
-          return (data || []).slice(0, 20).map((m: any) => ({
-            id: m.model_id || m.id,
-            name: m.model_id || m.id,
+          console.log('HuggingFace models response:', data);
+          
+          return (data || []).map((m: any) => ({
+            id: m.modelId || m.id,
+            name: m.modelId || m.id,
             provider: 'huggingface',
-            description: `Modelo HuggingFace: ${m.model_id || m.id}`,
+            description: `Modelo HuggingFace: ${m.modelId || m.id}`,
             capabilities: ['open-source', 'community'],
-            status: 'stable',
+            status: 'stable' as const,
           }));
         }
         
         case 'opencode': {
-          // OpenCode predefined models
+          // OpenCode no tiene endpoint público, retornamos lista predefinida
           return [
-            { id: 'codellama-34b', name: 'CodeLlama 34B', provider: 'opencode', description: 'Modelo especializado en código', contextLength: 16384, capabilities: ['code', 'programming'], status: 'stable' },
-            { id: 'deepseek-coder-33b', name: 'DeepSeek Coder 33B', provider: 'opencode', description: 'Modelo de código avanzado', contextLength: 16384, capabilities: ['code', 'infilling'], status: 'stable' },
-            { id: 'starcoder-15b', name: 'StarCoder 15B', provider: 'opencode', description: 'Modelo de código open-source', contextLength: 8192, capabilities: ['code', 'open-source'], status: 'stable' },
+            { id: 'codellama-34b', name: 'CodeLlama 34B', provider: 'opencode', description: 'Modelo especializado en código', contextLength: 16384, capabilities: ['code', 'programming'], status: 'stable' as const },
+            { id: 'deepseek-coder-33b', name: 'DeepSeek Coder 33B', provider: 'opencode', description: 'Modelo de código avanzado', contextLength: 16384, capabilities: ['code', 'infilling'], status: 'stable' as const },
+            { id: 'starcoder-15b', name: 'StarCoder 15B', provider: 'opencode', description: 'Modelo de código open-source', contextLength: 8192, capabilities: ['code', 'open-source'], status: 'stable' as const },
           ];
         }
         
         default:
+          console.warn(`Provider ${provider} not supported for model listing`);
           return [];
       }
     } catch (error) {
       console.error(`Error fetching models for ${provider}:`, error);
-      return [];
+      // Lanzar el error para que el componente pueda mostrarlo
+      throw error;
     }
   },
 }));
