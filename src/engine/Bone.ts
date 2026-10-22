@@ -1,8 +1,5 @@
-import { BoneData, Transform, Vector2 } from './types';
+import { BoneData, Vector2, Transform } from './types';
 
-/**
- * Bone class for skeletal animation
- */
 export class Bone {
   id: string;
   name: string;
@@ -11,6 +8,8 @@ export class Bone {
   globalTransform: Transform;
   length: number;
   color: string;
+  locked: boolean;
+  visible: boolean;
 
   constructor(data: BoneData) {
     this.id = data.id;
@@ -20,51 +19,41 @@ export class Bone {
     this.globalTransform = { ...data.globalTransform };
     this.length = data.length;
     this.color = data.color;
+    this.locked = data.locked ?? false;
+    this.visible = data.visible ?? true;
   }
 
-  /**
-   * Calculate global transform based on parent chain
-   */
   calculateGlobalTransform(bones: Map<string, Bone>): Transform {
     if (!this.parentId) {
       this.globalTransform = { ...this.localTransform };
       return this.globalTransform;
     }
-
     const parent = bones.get(this.parentId);
     if (!parent) {
       this.globalTransform = { ...this.localTransform };
       return this.globalTransform;
     }
-
-    const parentGlobal = parent.globalTransform;
-
-    // Apply parent rotation to local position
-    const cos = Math.cos(parentGlobal.rotation);
-    const sin = Math.sin(parentGlobal.rotation);
+    const pg = parent.globalTransform;
+    const cos = Math.cos(pg.rotation);
+    const sin = Math.sin(pg.rotation);
     const rotatedPos = {
       x: this.localTransform.position.x * cos - this.localTransform.position.y * sin,
       y: this.localTransform.position.x * sin + this.localTransform.position.y * cos,
     };
-
     this.globalTransform = {
       position: {
-        x: parentGlobal.position.x + rotatedPos.x * parentGlobal.scale.x,
-        y: parentGlobal.position.y + rotatedPos.y * parentGlobal.scale.y,
+        x: pg.position.x + rotatedPos.x * pg.scale.x,
+        y: pg.position.y + rotatedPos.y * pg.scale.y,
       },
-      rotation: parentGlobal.rotation + this.localTransform.rotation,
+      rotation: pg.rotation + this.localTransform.rotation,
       scale: {
-        x: parentGlobal.scale.x * this.localTransform.scale.x,
-        y: parentGlobal.scale.y * this.localTransform.scale.y,
+        x: pg.scale.x * this.localTransform.scale.x,
+        y: pg.scale.y * this.localTransform.scale.y,
       },
     };
-
     return this.globalTransform;
   }
 
-  /**
-   * Get the end point of the bone (tip)
-   */
   getEndPoint(): Vector2 {
     const cos = Math.cos(this.globalTransform.rotation);
     const sin = Math.sin(this.globalTransform.rotation);
@@ -74,9 +63,6 @@ export class Bone {
     };
   }
 
-  /**
-   * Convert to data object
-   */
   toData(): BoneData {
     return {
       id: this.id,
@@ -86,30 +72,21 @@ export class Bone {
       globalTransform: { ...this.globalTransform },
       length: this.length,
       color: this.color,
+      locked: this.locked,
+      visible: this.visible,
     };
   }
 }
 
-/**
- * Calculate all global transforms for a skeleton
- */
 export function calculateAllGlobalTransforms(bones: Map<string, Bone>): void {
-  // First pass: calculate in order (parents before children)
   const calculated = new Set<string>();
-  
-  function calculateRecursive(boneId: string) {
-    if (calculated.has(boneId)) return;
-    
-    const bone = bones.get(boneId);
+  function calc(id: string) {
+    if (calculated.has(id)) return;
+    const bone = bones.get(id);
     if (!bone) return;
-    
-    if (bone.parentId) {
-      calculateRecursive(bone.parentId);
-    }
-    
+    if (bone.parentId) calc(bone.parentId);
     bone.calculateGlobalTransform(bones);
-    calculated.add(boneId);
+    calculated.add(id);
   }
-  
-  bones.forEach((_, id) => calculateRecursive(id));
+  bones.forEach((_, id) => calc(id));
 }

@@ -1,124 +1,192 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  BoneData,
-  AnimationData,
-  KeyframeData,
-  Transform,
-  EasingType,
-  AssetData,
-  SlotData,
-  ProjectData,
+  BoneData, AnimationData, KeyframeData, Transform, EasingType,
+  AssetData, SlotData, ProjectData, SceneData, CharacterData,
+  BackgroundLayer, CameraData, CameraAnimation, AgentSystemConfig,
+  AgentAPIConfig, AgentTask, WebhookConfig,
 } from '../engine/types';
 import { getDefaultTransform } from '../engine/interpolation';
 
-interface AnimationState {
-  // Project
+const BONE_COLORS = ['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD','#98D8C8','#F7DC6F','#BB8FCE','#85C1E9','#F0B27A','#82E0AA'];
+const CHAR_COLORS = ['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD'];
+
+function createDefaultCharacter(name: string, pos = { x: 400, y: 400 }): CharacterData {
+  const rootId = uuidv4();
+  const torsoId = uuidv4();
+  const headId = uuidv4();
+  const armLId = uuidv4();
+  const armRId = uuidv4();
+  const legLId = uuidv4();
+  const legRId = uuidv4();
+
+  const bones: BoneData[] = [
+    { id: rootId, name: 'Root', parentId: null, localTransform: { position: pos, rotation: 0, scale: { x: 1, y: 1 } }, globalTransform: { position: pos, rotation: 0, scale: { x: 1, y: 1 } }, length: 40, color: BONE_COLORS[0], locked: false, visible: true },
+    { id: torsoId, name: 'Torso', parentId: rootId, localTransform: { position: { x: 0, y: -50 }, rotation: 0, scale: { x: 1, y: 1 } }, globalTransform: { position: { x: pos.x, y: pos.y - 50 }, rotation: 0, scale: { x: 1, y: 1 } }, length: 55, color: BONE_COLORS[1], locked: false, visible: true },
+    { id: headId, name: 'Cabeza', parentId: torsoId, localTransform: { position: { x: 0, y: -60 }, rotation: 0, scale: { x: 1, y: 1 } }, globalTransform: { position: { x: pos.x, y: pos.y - 110 }, rotation: 0, scale: { x: 1, y: 1 } }, length: 25, color: BONE_COLORS[2], locked: false, visible: true },
+    { id: armLId, name: 'Brazo Izq', parentId: torsoId, localTransform: { position: { x: -25, y: 0 }, rotation: -0.4, scale: { x: 1, y: 1 } }, globalTransform: { position: { x: pos.x - 25, y: pos.y - 50 }, rotation: -0.4, scale: { x: 1, y: 1 } }, length: 45, color: BONE_COLORS[3], locked: false, visible: true },
+    { id: armRId, name: 'Brazo Der', parentId: torsoId, localTransform: { position: { x: 25, y: 0 }, rotation: 0.4, scale: { x: 1, y: 1 } }, globalTransform: { position: { x: pos.x + 25, y: pos.y - 50 }, rotation: 0.4, scale: { x: 1, y: 1 } }, length: 45, color: BONE_COLORS[4], locked: false, visible: true },
+    { id: legLId, name: 'Pierna Izq', parentId: rootId, localTransform: { position: { x: -15, y: 0 }, rotation: 1.57, scale: { x: 1, y: 1 } }, globalTransform: { position: { x: pos.x - 15, y: pos.y }, rotation: 1.57, scale: { x: 1, y: 1 } }, length: 50, color: BONE_COLORS[5], locked: false, visible: true },
+    { id: legRId, name: 'Pierna Der', parentId: rootId, localTransform: { position: { x: 15, y: 0 }, rotation: 1.57, scale: { x: 1, y: 1 } }, globalTransform: { position: { x: pos.x + 15, y: pos.y }, rotation: 1.57, scale: { x: 1, y: 1 } }, length: 50, color: BONE_COLORS[6], locked: false, visible: true },
+  ];
+
+  return {
+    id: uuidv4(),
+    name,
+    bones,
+    slots: [],
+    animations: [],
+    visible: true,
+    locked: false,
+    position: pos,
+    scale: { x: 1, y: 1 },
+    rotation: 0,
+    zIndex: 0,
+    color: CHAR_COLORS[0],
+  };
+}
+
+function createDefaultScene(name: string): SceneData {
+  const char = createDefaultCharacter('Personaje 1');
+  const camId = uuidv4();
+  return {
+    id: uuidv4(),
+    name,
+    characters: [char],
+    backgrounds: [
+      { id: uuidv4(), name: 'Fondo', type: 'gradient', visible: true, locked: false, opacity: 1, zIndex: -10, gradientColors: ['#1a1a2e', '#16213e', '#0f3460'], gradientAngle: 180 },
+      { id: uuidv4(), name: 'Suelo', type: 'color', visible: true, locked: false, opacity: 0.8, zIndex: -5, color: '#2d3436' },
+    ],
+    cameras: [
+      { id: camId, name: 'Principal', position: { x: 400, y: 300 }, zoom: 1, rotation: 0, viewportWidth: 800, viewportHeight: 600, followSmoothness: 0.1, active: true },
+    ],
+    cameraAnimations: [],
+    activeCameraId: camId,
+    duration: 120,
+    fps: 24,
+    transition: { type: 'fade', duration: 0.5 },
+  };
+}
+
+function createDefaultProject(): ProjectData {
+  const scene = createDefaultScene('Escena 1');
+  return {
+    id: uuidv4(),
+    name: 'Mi Proyecto',
+    scenes: [scene],
+    activeSceneId: scene.id,
+    assets: [],
+    canvasWidth: 800,
+    canvasHeight: 600,
+    backgroundColor: '#1a1a2e',
+    metadata: { author: '', version: '1.0.0', created: new Date().toISOString(), modified: new Date().toISOString(), description: '' },
+  };
+}
+
+interface AppState {
   project: ProjectData;
-  selectedSkeletonId: string | null;
+  // Selections
+  selectedCharacterId: string | null;
   selectedBoneId: string | null;
   selectedAnimationId: string | null;
   selectedKeyframeId: string | null;
-
+  selectedBackgroundId: string | null;
+  selectedCameraId: string | null;
   // Playback
   currentTime: number;
   isPlaying: boolean;
   playbackSpeed: number;
   loop: boolean;
-
   // UI
   zoom: number;
   panOffset: { x: number; y: number };
   tool: 'select' | 'move' | 'rotate' | 'scale' | 'bone';
   showGrid: boolean;
-
-  // History (undo/redo)
-  history: string[];
-  historyIndex: number;
-
-  // Actions
+  activeTab: 'characters' | 'backgrounds' | 'cameras' | 'agents';
+  // Agent system
+  agentConfig: AgentSystemConfig;
+  // Helpers
+  getActiveScene: () => SceneData | undefined;
+  getActiveCharacter: () => CharacterData | undefined;
+  getActiveCamera: () => CameraData | undefined;
+  // Project actions
   createProject: (name: string) => void;
-  addBone: (parentId: string | null, name?: string) => void;
-  removeBone: (boneId: string) => void;
-  selectBone: (boneId: string | null) => void;
-  updateBoneTransform: (boneId: string, transform: Partial<Transform>) => void;
-  updateBoneName: (boneId: string, name: string) => void;
-  selectAnimation: (animationId: string | null) => void;
-  createAnimation: (name: string, duration?: number) => void;
-  removeAnimation: (animationId: string) => void;
-  addKeyframe: (boneId: string, time: number, transform?: Transform) => void;
-  removeKeyframe: (keyframeId: string) => void;
-  updateKeyframe: (keyframeId: string, updates: Partial<KeyframeData>) => void;
-  selectKeyframe: (keyframeId: string | null) => void;
-  setCurrentTime: (time: number) => void;
-  setPlaying: (playing: boolean) => void;
-  setPlaybackSpeed: (speed: number) => void;
-  setLoop: (loop: boolean) => void;
-  setZoom: (zoom: number) => void;
-  setPanOffset: (offset: { x: number; y: number }) => void;
-  setTool: (tool: 'select' | 'move' | 'rotate' | 'scale' | 'bone') => void;
-  toggleGrid: () => void;
-  addAsset: (asset: AssetData) => void;
-  removeAsset: (assetId: string) => void;
-  addSlot: (boneId: string, assetId: string | null) => void;
-  updateSlot: (slotId: string, updates: Partial<SlotData>) => void;
   exportProject: () => string;
   importProject: (json: string) => void;
+  // Scene actions
+  addScene: (name: string) => void;
+  removeScene: (id: string) => void;
+  setActiveScene: (id: string) => void;
+  // Character actions
+  addCharacter: (name?: string) => void;
+  removeCharacter: (id: string) => void;
+  selectCharacter: (id: string | null) => void;
+  updateCharacterPosition: (id: string, pos: { x: number; y: number }) => void;
+  // Bone actions
+  addBone: (parentId: string | null, name?: string) => void;
+  removeBone: (boneId: string) => void;
+  selectBone: (id: string | null) => void;
+  updateBoneTransform: (boneId: string, t: Partial<Transform>) => void;
+  updateBoneName: (boneId: string, name: string) => void;
+  toggleBoneLock: (boneId: string) => void;
+  toggleBoneVisibility: (boneId: string) => void;
+  // Animation actions
+  addAnimation: (name: string, duration?: number) => void;
+  removeAnimation: (id: string) => void;
+  selectAnimation: (id: string | null) => void;
+  addKeyframe: (boneId: string, time: number, transform?: Transform) => void;
+  removeKeyframe: (id: string) => void;
+  updateKeyframe: (id: string, updates: Partial<KeyframeData>) => void;
+  selectKeyframe: (id: string | null) => void;
+  // Background actions
+  addBackground: (layer: Partial<BackgroundLayer>) => void;
+  removeBackground: (id: string) => void;
+  updateBackground: (id: string, updates: Partial<BackgroundLayer>) => void;
+  selectBackground: (id: string | null) => void;
+  // Camera actions
+  addCamera: (name: string) => void;
+  removeCamera: (id: string) => void;
+  selectCamera: (id: string | null) => void;
+  updateCamera: (id: string, updates: Partial<CameraData>) => void;
+  setActiveCamera: (id: string) => void;
+  // Asset actions
+  addAsset: (asset: AssetData) => void;
+  removeAsset: (id: string) => void;
+  addSlot: (boneId: string, assetId: string | null) => void;
+  updateSlot: (slotId: string, updates: Partial<SlotData>) => void;
+  removeSlot: (slotId: string) => void;
+  // Playback
+  setCurrentTime: (t: number) => void;
+  setPlaying: (p: boolean) => void;
+  setPlaybackSpeed: (s: number) => void;
+  setLoop: (l: boolean) => void;
+  // UI
+  setZoom: (z: number) => void;
+  setPanOffset: (o: { x: number; y: number }) => void;
+  setTool: (t: 'select' | 'move' | 'rotate' | 'scale' | 'bone') => void;
+  toggleGrid: () => void;
+  setActiveTab: (t: 'characters' | 'backgrounds' | 'cameras' | 'agents') => void;
+  // Agent actions
+  addAgentAPI: (config: Omit<AgentAPIConfig, 'id'>) => void;
+  removeAgentAPI: (id: string) => void;
+  updateAgentAPI: (id: string, updates: Partial<AgentAPIConfig>) => void;
+  setDefaultAgentAPI: (id: string | null) => void;
+  addAgentTask: (task: Omit<AgentTask, 'id' | 'status' | 'createdAt'>) => void;
+  runAgentTask: (taskId: string) => Promise<void>;
+  removeAgentTask: (id: string) => void;
+  addWebhook: (config: Omit<WebhookConfig, 'id'>) => void;
+  removeWebhook: (id: string) => void;
+  updateWebhook: (id: string, updates: Partial<WebhookConfig>) => void;
 }
 
-const BONE_COLORS = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4',
-  '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
-  '#BB8FCE', '#85C1E9', '#F0B27A', '#82E0AA',
-];
-
-function createDefaultProject(): ProjectData {
-  return {
-    id: uuidv4(),
-    name: 'Nuevo Proyecto',
-    skeletons: [],
-    canvasWidth: 800,
-    canvasHeight: 600,
-    backgroundColor: '#1a1a2e',
-  };
-}
-
-function createDefaultSkeleton(): { id: string; name: string; bones: BoneData[]; slots: SlotData[]; animations: AnimationData[]; assets: AssetData[] } {
-  const rootBoneId = uuidv4();
-  return {
-    id: uuidv4(),
-    name: 'Personaje',
-    bones: [
-      {
-        id: rootBoneId,
-        name: 'Root',
-        parentId: null,
-        localTransform: {
-          position: { x: 400, y: 400 },
-          rotation: 0,
-          scale: { x: 1, y: 1 },
-        },
-        globalTransform: {
-          position: { x: 400, y: 400 },
-          rotation: 0,
-          scale: { x: 1, y: 1 },
-        },
-        length: 50,
-        color: BONE_COLORS[0],
-      },
-    ],
-    slots: [],
-    animations: [],
-    assets: [],
-  };
-}
-
-export const useAnimationStore = create<AnimationState>((set, get) => ({
+export const useAnimationStore = create<AppState>((set, get) => ({
   project: createDefaultProject(),
-  selectedSkeletonId: null,
+  selectedCharacterId: null,
   selectedBoneId: null,
   selectedAnimationId: null,
   selectedKeyframeId: null,
+  selectedBackgroundId: null,
+  selectedCameraId: null,
   currentTime: 0,
   isPlaying: false,
   playbackSpeed: 1,
@@ -127,417 +195,262 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   panOffset: { x: 0, y: 0 },
   tool: 'select',
   showGrid: true,
-  history: [],
-  historyIndex: -1,
+  activeTab: 'characters',
+  agentConfig: {
+    apis: [
+      { id: 'ollama-local', name: 'Ollama Local', provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3', maxTokens: 2048, temperature: 0.7, enabled: true },
+      { id: 'groq-free', name: 'Groq (Gratis)', provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: '', model: 'llama-3.1-70b-versatile', maxTokens: 4096, temperature: 0.7, enabled: false },
+      { id: 'hf-free', name: 'HuggingFace', provider: 'huggingface', baseUrl: 'https://api-inference.huggingface.co/models', apiKey: '', model: 'mistralai/Mistral-7B-Instruct-v0.2', maxTokens: 2048, temperature: 0.7, enabled: false },
+      { id: 'openai-api', name: 'OpenAI', provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.7, enabled: false },
+      { id: 'claude-api', name: 'Claude', provider: 'claude', baseUrl: 'https://api.anthropic.com/v1', apiKey: '', model: 'claude-3-5-sonnet-20241022', maxTokens: 4096, temperature: 0.7, enabled: false },
+    ],
+    tasks: [],
+    webhooks: [],
+    defaultApiId: 'ollama-local',
+    autoSave: true,
+    queueEnabled: true,
+  },
+
+  getActiveScene: () => {
+    const { project } = get();
+    return project.scenes.find(s => s.id === project.activeSceneId);
+  },
+  getActiveCharacter: () => {
+    const scene = get().getActiveScene();
+    if (!scene) return undefined;
+    return scene.characters.find(c => c.id === get().selectedCharacterId) || scene.characters[0];
+  },
+  getActiveCamera: () => {
+    const scene = get().getActiveScene();
+    if (!scene) return undefined;
+    return scene.cameras.find(c => c.id === scene.activeCameraId);
+  },
 
   createProject: (name: string) => {
     const project = createDefaultProject();
     project.name = name;
-    const skeleton = createDefaultSkeleton();
-    
-    // Add extra bones for demo
-    const bone2Id = uuidv4();
-    const bone3Id = uuidv4();
-    const bone4Id = uuidv4();
-    const bone5Id = uuidv4();
-    
-    skeleton.bones.push(
-      {
-        id: bone2Id,
-        name: 'Torso',
-        parentId: skeleton.bones[0].id,
-        localTransform: {
-          position: { x: 0, y: -60 },
-          rotation: 0,
-          scale: { x: 1, y: 1 },
-        },
-        globalTransform: {
-          position: { x: 400, y: 340 },
-          rotation: 0,
-          scale: { x: 1, y: 1 },
-        },
-        length: 60,
-        color: BONE_COLORS[1],
-      },
-      {
-        id: bone3Id,
-        name: 'Cabeza',
-        parentId: bone2Id,
-        localTransform: {
-          position: { x: 0, y: -70 },
-          rotation: 0,
-          scale: { x: 1, y: 1 },
-        },
-        globalTransform: {
-          position: { x: 400, y: 270 },
-          rotation: 0,
-          scale: { x: 1, y: 1 },
-        },
-        length: 30,
-        color: BONE_COLORS[2],
-      },
-      {
-        id: bone4Id,
-        name: 'Brazo Der',
-        parentId: bone2Id,
-        localTransform: {
-          position: { x: 30, y: 0 },
-          rotation: 0.5,
-          scale: { x: 1, y: 1 },
-        },
-        globalTransform: {
-          position: { x: 430, y: 340 },
-          rotation: 0.5,
-          scale: { x: 1, y: 1 },
-        },
-        length: 50,
-        color: BONE_COLORS[3],
-      },
-      {
-        id: bone5Id,
-        name: 'Brazo Izq',
-        parentId: bone2Id,
-        localTransform: {
-          position: { x: -30, y: 0 },
-          rotation: -0.5,
-          scale: { x: 1, y: 1 },
-        },
-        globalTransform: {
-          position: { x: 370, y: 340 },
-          rotation: -0.5,
-          scale: { x: 1, y: 1 },
-        },
-        length: 50,
-        color: BONE_COLORS[4],
-      }
-    );
-    
-    // Create a demo animation with keyframes
-    const demoAnimId = uuidv4();
-    const rootId = skeleton.bones[0].id;
-    
-    skeleton.animations.push({
-      id: demoAnimId,
-      name: 'Idle',
-      duration: 48,
-      fps: 24,
-      loop: true,
-      keyframes: [
-        // Root bone - subtle bob
-        { id: uuidv4(), boneId: rootId, time: 0, transform: { position: { x: 400, y: 400 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: rootId, time: 12, transform: { position: { x: 400, y: 395 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: rootId, time: 24, transform: { position: { x: 400, y: 400 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: rootId, time: 36, transform: { position: { x: 400, y: 395 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: rootId, time: 48, transform: { position: { x: 400, y: 400 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        // Torso - slight sway
-        { id: uuidv4(), boneId: bone2Id, time: 0, transform: { position: { x: 0, y: -60 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone2Id, time: 12, transform: { position: { x: 0, y: -60 }, rotation: 0.05, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone2Id, time: 24, transform: { position: { x: 0, y: -60 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone2Id, time: 36, transform: { position: { x: 0, y: -60 }, rotation: -0.05, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone2Id, time: 48, transform: { position: { x: 0, y: -60 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        // Head - look around
-        { id: uuidv4(), boneId: bone3Id, time: 0, transform: { position: { x: 0, y: -70 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone3Id, time: 16, transform: { position: { x: 0, y: -70 }, rotation: 0.15, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone3Id, time: 32, transform: { position: { x: 0, y: -70 }, rotation: -0.15, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone3Id, time: 48, transform: { position: { x: 0, y: -70 }, rotation: 0, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        // Right arm - swing
-        { id: uuidv4(), boneId: bone4Id, time: 0, transform: { position: { x: 30, y: 0 }, rotation: 0.5, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone4Id, time: 12, transform: { position: { x: 30, y: 0 }, rotation: 0.8, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone4Id, time: 24, transform: { position: { x: 30, y: 0 }, rotation: 0.5, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone4Id, time: 36, transform: { position: { x: 30, y: 0 }, rotation: 0.2, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone4Id, time: 48, transform: { position: { x: 30, y: 0 }, rotation: 0.5, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        // Left arm - opposite swing
-        { id: uuidv4(), boneId: bone5Id, time: 0, transform: { position: { x: -30, y: 0 }, rotation: -0.5, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone5Id, time: 12, transform: { position: { x: -30, y: 0 }, rotation: -0.2, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone5Id, time: 24, transform: { position: { x: -30, y: 0 }, rotation: -0.5, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone5Id, time: 36, transform: { position: { x: -30, y: 0 }, rotation: -0.8, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-        { id: uuidv4(), boneId: bone5Id, time: 48, transform: { position: { x: -30, y: 0 }, rotation: -0.5, scale: { x: 1, y: 1 } }, easing: 'easeInOut' },
-      ],
-    });
-    
-    project.skeletons.push(skeleton);
-    set({
-      project,
-      selectedSkeletonId: skeleton.id,
-      selectedBoneId: skeleton.bones[0]?.id || null,
-      selectedAnimationId: demoAnimId,
-    });
+    const scene = project.scenes[0];
+    set({ project, selectedCharacterId: scene.characters[0].id, selectedBoneId: scene.characters[0].bones[0].id });
+  },
+
+  exportProject: () => JSON.stringify(get().project, null, 2),
+  importProject: (json: string) => {
+    try {
+      const project = JSON.parse(json) as ProjectData;
+      const scene = project.scenes[0];
+      set({ project, selectedCharacterId: scene?.characters[0]?.id || null, selectedBoneId: null, selectedAnimationId: null, selectedKeyframeId: null, currentTime: 0, isPlaying: false });
+    } catch (e) { console.error(e); }
+  },
+
+  addScene: (name: string) => {
+    const { project } = get();
+    const scene = createDefaultScene(name);
+    project.scenes.push(scene);
+    set({ project: { ...project }, activeTab: 'characters' });
+  },
+  removeScene: (id: string) => {
+    const { project } = get();
+    if (project.scenes.length <= 1) return;
+    project.scenes = project.scenes.filter(s => s.id !== id);
+    if (project.activeSceneId === id) project.activeSceneId = project.scenes[0].id;
+    set({ project: { ...project } });
+  },
+  setActiveScene: (id: string) => {
+    set({ project: { ...get().project, activeSceneId: id }, selectedCharacterId: null, selectedBoneId: null, selectedAnimationId: null, currentTime: 0 });
+  },
+
+  addCharacter: (name?: string) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    const char = createDefaultCharacter(name || `Personaje ${scene.characters.length + 1}`, { x: 300 + scene.characters.length * 100, y: 400 });
+    char.color = CHAR_COLORS[scene.characters.length % CHAR_COLORS.length];
+    scene.characters.push(char);
+    set({ project: { ...get().project }, selectedCharacterId: char.id, selectedBoneId: char.bones[0].id });
+  },
+  removeCharacter: (id: string) => {
+    const scene = get().getActiveScene();
+    if (!scene || scene.characters.length <= 1) return;
+    scene.characters = scene.characters.filter(c => c.id !== id);
+    set({ project: { ...get().project }, selectedCharacterId: scene.characters[0]?.id || null, selectedBoneId: null });
+  },
+  selectCharacter: (id: string | null) => set({ selectedCharacterId: id, selectedBoneId: null, selectedAnimationId: null }),
+  updateCharacterPosition: (id: string, pos: { x: number; y: number }) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    const char = scene.characters.find(c => c.id === id);
+    if (char) { char.position = pos; set({ project: { ...get().project } }); }
   },
 
   addBone: (parentId: string | null, name?: string) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const parentBone = parentId ? skeleton.bones.find(b => b.id === parentId) : undefined;
-    const position = parentBone
-      ? { x: parentBone.localTransform.position.x + parentBone.length, y: parentBone.localTransform.position.y }
-      : { x: 400, y: 300 };
-
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const parent = parentId ? char.bones.find(b => b.id === parentId) : undefined;
+    const pos = parent ? { x: parent.localTransform.position.x + parent.length, y: parent.localTransform.position.y } : { x: 400, y: 300 };
     const newBone: BoneData = {
-      id: uuidv4(),
-      name: name || `Bone_${skeleton.bones.length}`,
-      parentId,
-      localTransform: {
-        position: parentBone ? { x: parentBone.length, y: 0 } : position,
-        rotation: 0,
-        scale: { x: 1, y: 1 },
-      },
-      globalTransform: {
-        position,
-        rotation: 0,
-        scale: { x: 1, y: 1 },
-      },
-      length: 50,
-      color: BONE_COLORS[skeleton.bones.length % BONE_COLORS.length],
+      id: uuidv4(), name: name || `Hueso_${char.bones.length}`, parentId,
+      localTransform: { position: parent ? { x: parent.length, y: 0 } : pos, rotation: 0, scale: { x: 1, y: 1 } },
+      globalTransform: { position: pos, rotation: 0, scale: { x: 1, y: 1 } },
+      length: 50, color: BONE_COLORS[char.bones.length % BONE_COLORS.length], locked: false, visible: true,
     };
-
-    skeleton.bones.push(newBone);
-    set({ project: { ...project }, selectedBoneId: newBone.id });
+    char.bones.push(newBone);
+    set({ project: { ...get().project }, selectedBoneId: newBone.id });
   },
-
   removeBone: (boneId: string) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    // Remove bone and all children
+    const char = get().getActiveCharacter();
+    if (!char) return;
     const toRemove = new Set<string>();
-    const allBones = skeleton.bones;
-    function findChildren(id: string) {
-      toRemove.add(id);
-      allBones.filter(b => b.parentId === id).forEach(b => findChildren(b.id));
-    }
+    const allBones = char.bones;
+    function findChildren(id: string) { toRemove.add(id); allBones.filter(b => b.parentId === id).forEach(b => findChildren(b.id)); }
     findChildren(boneId);
-
-    skeleton.bones = skeleton.bones.filter(b => !toRemove.has(b.id));
-    skeleton.slots = skeleton.slots.filter(s => !toRemove.has(s.boneId));
-
-    // Remove keyframes for removed bones
-    skeleton.animations.forEach(anim => {
-      anim.keyframes = anim.keyframes.filter(kf => !toRemove.has(kf.boneId));
-    });
-
-    set({
-      project: { ...project },
-      selectedBoneId: null,
-      selectedKeyframeId: null,
-    });
+    char.bones = char.bones.filter(b => !toRemove.has(b.id));
+    char.slots = char.slots.filter(s => !toRemove.has(s.boneId));
+    char.animations.forEach(a => { a.keyframes = a.keyframes.filter(kf => !toRemove.has(kf.boneId)); });
+    set({ project: { ...get().project }, selectedBoneId: null, selectedKeyframeId: null });
   },
-
-  selectBone: (boneId: string | null) => {
-    set({ selectedBoneId: boneId });
-  },
-
-  updateBoneTransform: (boneId: string, transform: Partial<Transform>) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const bone = skeleton.bones.find(b => b.id === boneId);
+  selectBone: (id: string | null) => set({ selectedBoneId: id }),
+  updateBoneTransform: (boneId: string, t: Partial<Transform>) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const bone = char.bones.find(b => b.id === boneId);
     if (!bone) return;
-
-    if (transform.position) bone.localTransform.position = { ...transform.position };
-    if (transform.rotation !== undefined) bone.localTransform.rotation = transform.rotation;
-    if (transform.scale) bone.localTransform.scale = { ...transform.scale };
-
-    set({ project: { ...project } });
+    if (t.position) bone.localTransform.position = { ...t.position };
+    if (t.rotation !== undefined) bone.localTransform.rotation = t.rotation;
+    if (t.scale) bone.localTransform.scale = { ...t.scale };
+    set({ project: { ...get().project } });
   },
-
   updateBoneName: (boneId: string, name: string) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const bone = skeleton.bones.find(b => b.id === boneId);
-    if (!bone) return;
-
-    bone.name = name;
-    set({ project: { ...project } });
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const bone = char.bones.find(b => b.id === boneId);
+    if (bone) { bone.name = name; set({ project: { ...get().project } }); }
+  },
+  toggleBoneLock: (boneId: string) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const bone = char.bones.find(b => b.id === boneId);
+    if (bone) { bone.locked = !bone.locked; set({ project: { ...get().project } }); }
+  },
+  toggleBoneVisibility: (boneId: string) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const bone = char.bones.find(b => b.id === boneId);
+    if (bone) { bone.visible = !bone.visible; set({ project: { ...get().project } }); }
   },
 
-  selectAnimation: (animationId: string | null) => {
-    set({ selectedAnimationId: animationId, selectedKeyframeId: null, currentTime: 0 });
+  addAnimation: (name: string, duration = 60) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const anim: AnimationData = { id: uuidv4(), name, duration, fps: 24, keyframes: [], loop: true };
+    char.animations.push(anim);
+    set({ project: { ...get().project }, selectedAnimationId: anim.id });
   },
-
-  createAnimation: (name: string, duration: number = 60) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const newAnimation: AnimationData = {
-      id: uuidv4(),
-      name,
-      duration,
-      fps: 24,
-      keyframes: [],
-      loop: true,
-    };
-
-    skeleton.animations.push(newAnimation);
-    set({ project: { ...project }, selectedAnimationId: newAnimation.id });
+  removeAnimation: (id: string) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    char.animations = char.animations.filter(a => a.id !== id);
+    set({ project: { ...get().project }, selectedAnimationId: null, selectedKeyframeId: null });
   },
-
-  removeAnimation: (animationId: string) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    skeleton.animations = skeleton.animations.filter(a => a.id !== animationId);
-    set({
-      project: { ...project },
-      selectedAnimationId: null,
-      selectedKeyframeId: null,
-    });
-  },
-
+  selectAnimation: (id: string | null) => set({ selectedAnimationId: id, selectedKeyframeId: null, currentTime: 0 }),
   addKeyframe: (boneId: string, time: number, transform?: Transform) => {
-    const { project, selectedSkeletonId, selectedAnimationId } = get();
-    if (!selectedSkeletonId || !selectedAnimationId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const animation = skeleton.animations.find(a => a.id === selectedAnimationId);
-    if (!animation) return;
-
-    const bone = skeleton.bones.find(b => b.id === boneId);
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const anim = char.animations.find(a => a.id === get().selectedAnimationId);
+    if (!anim) return;
+    const bone = char.bones.find(b => b.id === boneId);
     if (!bone) return;
-
-    // Remove existing keyframe at same time for same bone
-    animation.keyframes = animation.keyframes.filter(
-      kf => !(kf.boneId === boneId && kf.time === time)
-    );
-
-    const newKeyframe: KeyframeData = {
-      id: uuidv4(),
-      boneId,
-      time,
-      transform: transform ? { ...transform } : { ...bone.localTransform },
-      easing: 'easeInOut',
-    };
-
-    animation.keyframes.push(newKeyframe);
-    animation.keyframes.sort((a, b) => a.time - b.time);
-
-    set({ project: { ...project }, selectedKeyframeId: newKeyframe.id });
+    anim.keyframes = anim.keyframes.filter(kf => !(kf.boneId === boneId && kf.time === time));
+    const kf: KeyframeData = { id: uuidv4(), boneId, time, transform: transform || { ...bone.localTransform }, easing: 'easeInOut' };
+    anim.keyframes.push(kf);
+    anim.keyframes.sort((a, b) => a.time - b.time);
+    set({ project: { ...get().project }, selectedKeyframeId: kf.id });
   },
-
-  removeKeyframe: (keyframeId: string) => {
-    const { project, selectedSkeletonId, selectedAnimationId } = get();
-    if (!selectedSkeletonId || !selectedAnimationId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const animation = skeleton.animations.find(a => a.id === selectedAnimationId);
-    if (!animation) return;
-
-    animation.keyframes = animation.keyframes.filter(kf => kf.id !== keyframeId);
-    set({ project: { ...project }, selectedKeyframeId: null });
+  removeKeyframe: (id: string) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const anim = char.animations.find(a => a.id === get().selectedAnimationId);
+    if (!anim) return;
+    anim.keyframes = anim.keyframes.filter(kf => kf.id !== id);
+    set({ project: { ...get().project }, selectedKeyframeId: null });
   },
-
-  updateKeyframe: (keyframeId: string, updates: Partial<KeyframeData>) => {
-    const { project, selectedSkeletonId, selectedAnimationId } = get();
-    if (!selectedSkeletonId || !selectedAnimationId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const animation = skeleton.animations.find(a => a.id === selectedAnimationId);
-    if (!animation) return;
-
-    const keyframe = animation.keyframes.find(kf => kf.id === keyframeId);
-    if (!keyframe) return;
-
-    if (updates.time !== undefined) keyframe.time = updates.time;
-    if (updates.transform) keyframe.transform = { ...updates.transform };
-    if (updates.easing) keyframe.easing = updates.easing;
-    if (updates.bezierPoints) keyframe.bezierPoints = { ...updates.bezierPoints };
-
-    animation.keyframes.sort((a, b) => a.time - b.time);
-    set({ project: { ...project } });
+  updateKeyframe: (id: string, updates: Partial<KeyframeData>) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const anim = char.animations.find(a => a.id === get().selectedAnimationId);
+    if (!anim) return;
+    const kf = anim.keyframes.find(k => k.id === id);
+    if (!kf) return;
+    if (updates.time !== undefined) kf.time = updates.time;
+    if (updates.transform) kf.transform = { ...updates.transform };
+    if (updates.easing) kf.easing = updates.easing;
+    anim.keyframes.sort((a, b) => a.time - b.time);
+    set({ project: { ...get().project } });
   },
+  selectKeyframe: (id: string | null) => set({ selectedKeyframeId: id }),
 
-  selectKeyframe: (keyframeId: string | null) => {
-    set({ selectedKeyframeId: keyframeId });
+  addBackground: (layer: Partial<BackgroundLayer>) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    const bg: BackgroundLayer = { id: uuidv4(), name: layer.name || 'Capa', type: layer.type || 'color', visible: true, locked: false, opacity: 1, zIndex: layer.zIndex || 0, ...layer };
+    scene.backgrounds.push(bg);
+    set({ project: { ...get().project } });
   },
-
-  setCurrentTime: (time: number) => {
-    set({ currentTime: time });
+  removeBackground: (id: string) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    scene.backgrounds = scene.backgrounds.filter(b => b.id !== id);
+    set({ project: { ...get().project } });
   },
-
-  setPlaying: (playing: boolean) => {
-    set({ isPlaying: playing });
+  updateBackground: (id: string, updates: Partial<BackgroundLayer>) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    const bg = scene.backgrounds.find(b => b.id === id);
+    if (bg) { Object.assign(bg, updates); set({ project: { ...get().project } }); }
   },
+  selectBackground: (id: string | null) => set({ selectedBackgroundId: id }),
 
-  setPlaybackSpeed: (speed: number) => {
-    set({ playbackSpeed: speed });
+  addCamera: (name: string) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    const cam: CameraData = { id: uuidv4(), name, position: { x: 400, y: 300 }, zoom: 1, rotation: 0, viewportWidth: 800, viewportHeight: 600, followSmoothness: 0.1, active: false };
+    scene.cameras.push(cam);
+    set({ project: { ...get().project } });
   },
-
-  setLoop: (loop: boolean) => {
-    set({ loop });
+  removeCamera: (id: string) => {
+    const scene = get().getActiveScene();
+    if (!scene || scene.cameras.length <= 1) return;
+    scene.cameras = scene.cameras.filter(c => c.id !== id);
+    if (scene.activeCameraId === id) scene.activeCameraId = scene.cameras[0].id;
+    set({ project: { ...get().project } });
   },
-
-  setZoom: (zoom: number) => {
-    set({ zoom: Math.max(0.1, Math.min(5, zoom)) });
+  selectCamera: (id: string | null) => set({ selectedCameraId: id }),
+  updateCamera: (id: string, updates: Partial<CameraData>) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    const cam = scene.cameras.find(c => c.id === id);
+    if (cam) { Object.assign(cam, updates); set({ project: { ...get().project } }); }
   },
-
-  setPanOffset: (offset: { x: number; y: number }) => {
-    set({ panOffset: offset });
-  },
-
-  setTool: (tool: 'select' | 'move' | 'rotate' | 'scale' | 'bone') => {
-    set({ tool });
-  },
-
-  toggleGrid: () => {
-    set({ showGrid: !get().showGrid });
+  setActiveCamera: (id: string) => {
+    const scene = get().getActiveScene();
+    if (!scene) return;
+    scene.cameras.forEach(c => c.active = c.id === id);
+    scene.activeCameraId = id;
+    set({ project: { ...get().project } });
   },
 
   addAsset: (asset: AssetData) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    skeleton.assets.push(asset);
+    const { project } = get();
+    project.assets.push(asset);
     set({ project: { ...project } });
   },
-
-  removeAsset: (assetId: string) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    skeleton.assets = skeleton.assets.filter(a => a.id !== assetId);
-    skeleton.slots = skeleton.slots.filter(s => s.assetId !== assetId);
+  removeAsset: (id: string) => {
+    const { project } = get();
+    project.assets = project.assets.filter(a => a.id !== id);
     set({ project: { ...project } });
   },
-
   addSlot: (boneId: string, assetId: string | null) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const newSlot: SlotData = {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const slot: SlotData = {
       id: uuidv4(),
       boneId,
       assetId,
@@ -546,45 +459,114 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
       rotation: 0,
       blendMode: 'normal',
       opacity: 1,
+      zIndex: char.slots.length,
     };
-
-    skeleton.slots.push(newSlot);
-    set({ project: { ...project } });
+    char.slots.push(slot);
+    set({ project: { ...get().project } });
   },
-
   updateSlot: (slotId: string, updates: Partial<SlotData>) => {
-    const { project, selectedSkeletonId } = get();
-    if (!selectedSkeletonId) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const slot = skeleton.slots.find(s => s.id === slotId);
-    if (!slot) return;
-
-    Object.assign(slot, updates);
-    set({ project: { ...project } });
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    const slot = char.slots.find(s => s.id === slotId);
+    if (slot) { Object.assign(slot, updates); set({ project: { ...get().project } }); }
+  },
+  removeSlot: (slotId: string) => {
+    const char = get().getActiveCharacter();
+    if (!char) return;
+    char.slots = char.slots.filter(s => s.id !== slotId);
+    set({ project: { ...get().project } });
   },
 
-  exportProject: () => {
-    const { project } = get();
-    return JSON.stringify(project, null, 2);
-  },
+  setCurrentTime: (t: number) => set({ currentTime: t }),
+  setPlaying: (p: boolean) => set({ isPlaying: p }),
+  setPlaybackSpeed: (s: number) => set({ playbackSpeed: s }),
+  setLoop: (l: boolean) => set({ loop: l }),
+  setZoom: (z: number) => set({ zoom: Math.max(0.1, Math.min(5, z)) }),
+  setPanOffset: (o: { x: number; y: number }) => set({ panOffset: o }),
+  setTool: (t: 'select' | 'move' | 'rotate' | 'scale' | 'bone') => set({ tool: t }),
+  toggleGrid: () => set({ showGrid: !get().showGrid }),
+  setActiveTab: (t: 'characters' | 'backgrounds' | 'cameras' | 'agents') => set({ activeTab: t }),
 
-  importProject: (json: string) => {
+  addAgentAPI: (config: Omit<AgentAPIConfig, 'id'>) => {
+    const { agentConfig } = get();
+    agentConfig.apis.push({ ...config, id: uuidv4() });
+    set({ agentConfig: { ...agentConfig } });
+  },
+  removeAgentAPI: (id: string) => {
+    const { agentConfig } = get();
+    agentConfig.apis = agentConfig.apis.filter(a => a.id !== id);
+    if (agentConfig.defaultApiId === id) agentConfig.defaultApiId = agentConfig.apis[0]?.id || null;
+    set({ agentConfig: { ...agentConfig } });
+  },
+  updateAgentAPI: (id: string, updates: Partial<AgentAPIConfig>) => {
+    const { agentConfig } = get();
+    const api = agentConfig.apis.find(a => a.id === id);
+    if (api) { Object.assign(api, updates); set({ agentConfig: { ...agentConfig } }); }
+  },
+  setDefaultAgentAPI: (id: string | null) => {
+    const { agentConfig } = get();
+    agentConfig.defaultApiId = id;
+    set({ agentConfig: { ...agentConfig } });
+  },
+  addAgentTask: (task: Omit<AgentTask, 'id' | 'status' | 'createdAt'>) => {
+    const { agentConfig } = get();
+    agentConfig.tasks.push({ ...task, id: uuidv4(), status: 'idle', createdAt: new Date().toISOString() });
+    set({ agentConfig: { ...agentConfig } });
+  },
+  runAgentTask: async (taskId: string) => {
+    const { agentConfig } = get();
+    const task = agentConfig.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const api = agentConfig.apis.find(a => a.id === task.apiConfigId);
+    if (!api) { task.status = 'error'; task.error = 'API no encontrada'; set({ agentConfig: { ...agentConfig } }); return; }
+    task.status = 'running';
+    set({ agentConfig: { ...agentConfig } });
     try {
-      const project = JSON.parse(json) as ProjectData;
-      set({
-        project,
-        selectedSkeletonId: project.skeletons[0]?.id || null,
-        selectedBoneId: null,
-        selectedAnimationId: null,
-        selectedKeyframeId: null,
-        currentTime: 0,
-        isPlaying: false,
-      });
-    } catch (e) {
-      console.error('Error importing project:', e);
+      let response: Response;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', ...api.customHeaders };
+      if (api.apiKey) {
+        if (api.provider === 'claude') headers['x-api-key'] = api.apiKey;
+        else headers['Authorization'] = `Bearer ${api.apiKey}`;
+      }
+      const body = { model: api.model, messages: [{ role: 'user', content: task.prompt }], max_tokens: api.maxTokens, temperature: api.temperature, ...api.customBody };
+      if (api.provider === 'ollama') {
+        response = await fetch(`${api.baseUrl}/api/chat`, { method: 'POST', headers, body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: task.prompt }], stream: false }) });
+      } else if (api.provider === 'claude') {
+        headers['anthropic-version'] = '2023-06-01';
+        response = await fetch(`${api.baseUrl}/messages`, { method: 'POST', headers, body: JSON.stringify({ ...body, system: 'Eres un asistente de animación 2D.' }) });
+      } else {
+        response = await fetch(`${api.baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body) });
+      }
+      const data = await response.json();
+      if (api.provider === 'ollama') task.result = data.message?.content || JSON.stringify(data);
+      else if (api.provider === 'claude') task.result = data.content?.[0]?.text || JSON.stringify(data);
+      else task.result = data.choices?.[0]?.message?.content || JSON.stringify(data);
+      task.status = 'completed';
+      task.completedAt = new Date().toISOString();
+    } catch (e: unknown) {
+      task.status = 'error';
+      task.error = e instanceof Error ? e.message : 'Error desconocido';
     }
+    set({ agentConfig: { ...agentConfig } });
+  },
+  removeAgentTask: (id: string) => {
+    const { agentConfig } = get();
+    agentConfig.tasks = agentConfig.tasks.filter(t => t.id !== id);
+    set({ agentConfig: { ...agentConfig } });
+  },
+  addWebhook: (config: Omit<WebhookConfig, 'id'>) => {
+    const { agentConfig } = get();
+    agentConfig.webhooks.push({ ...config, id: uuidv4() });
+    set({ agentConfig: { ...agentConfig } });
+  },
+  removeWebhook: (id: string) => {
+    const { agentConfig } = get();
+    agentConfig.webhooks = agentConfig.webhooks.filter(w => w.id !== id);
+    set({ agentConfig: { ...agentConfig } });
+  },
+  updateWebhook: (id: string, updates: Partial<WebhookConfig>) => {
+    const { agentConfig } = get();
+    const wh = agentConfig.webhooks.find(w => w.id === id);
+    if (wh) { Object.assign(wh, updates); set({ agentConfig: { ...agentConfig } }); }
   },
 }));
