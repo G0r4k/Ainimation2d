@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { useAnimationStore } from '../stores/animationStore';
 import { Bone, calculateAllGlobalTransforms } from '../engine/Bone';
 import { getEasingValue, lerpTransform } from '../engine/interpolation';
-import { KeyframeData, Transform } from '../engine/types';
+import { KeyframeData, Transform, BoneData, BackgroundLayer, CameraData } from '../engine/types';
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -13,29 +13,8 @@ export function Canvas() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  const {
-    project,
-    selectedSkeletonId,
-    selectedBoneId,
-    selectedAnimationId,
-    currentTime,
-    isPlaying,
-    playbackSpeed,
-    loop,
-    zoom,
-    panOffset,
-    tool,
-    showGrid,
-    selectBone,
-    updateBoneTransform,
-    addBone,
-    setCurrentTime,
-    setPlaying,
-    setPanOffset,
-    setZoom,
-  } = useAnimationStore();
+  const store = useAnimationStore();
 
-  // Resize handler
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
@@ -48,408 +27,288 @@ export function Canvas() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Get interpolated transform for a bone at current time
-  const getInterpolatedTransform = useCallback((boneId: string, time: number): Transform | null => {
-    if (!selectedSkeletonId || !selectedAnimationId) return null;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return null;
-
-    const animation = skeleton.animations.find(a => a.id === selectedAnimationId);
-    if (!animation) return null;
-
-    const boneKeyframes = animation.keyframes
-      .filter(kf => kf.boneId === boneId)
-      .sort((a, b) => a.time - b.time);
-
+  const getInterpolatedTransform = useCallback((boneId: string, time: number, bones: BoneData[], animKeyframes: KeyframeData[]): Transform | null => {
+    const boneKeyframes = animKeyframes.filter(kf => kf.boneId === boneId).sort((a, b) => a.time - b.time);
     if (boneKeyframes.length === 0) return null;
     if (boneKeyframes.length === 1) return boneKeyframes[0].transform;
-
-    // Find surrounding keyframes
     let prevKf: KeyframeData | null = null;
     let nextKf: KeyframeData | null = null;
-
-    for (let i = 0; i < boneKeyframes.length; i++) {
-      if (boneKeyframes[i].time <= time) prevKf = boneKeyframes[i];
-      if (boneKeyframes[i].time >= time && !nextKf) nextKf = boneKeyframes[i];
+    for (const kf of boneKeyframes) {
+      if (kf.time <= time) prevKf = kf;
+      if (kf.time >= time && !nextKf) nextKf = kf;
     }
-
     if (!prevKf) return boneKeyframes[0].transform;
     if (!nextKf) return boneKeyframes[boneKeyframes.length - 1].transform;
     if (prevKf.id === nextKf.id) return prevKf.transform;
-
     const t = (time - prevKf.time) / (nextKf.time - prevKf.time);
     const easedT = getEasingValue(t, prevKf.easing, prevKf.bezierPoints);
-
     return lerpTransform(prevKf.transform, nextKf.transform, easedT);
-  }, [project, selectedSkeletonId, selectedAnimationId]);
+  }, []);
 
-  // Animation playback loop
+  // Playback
   useEffect(() => {
-    if (!isPlaying) return;
-
-    const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-    if (!skeleton) return;
-
-    const animation = skeleton.animations.find(a => a.id === selectedAnimationId);
-    if (!animation) return;
-
+    if (!store.isPlaying) return;
+    const scene = store.getActiveScene();
+    if (!scene) return;
     const animate = (timestamp: number) => {
       if (!lastTimeRef.current) lastTimeRef.current = timestamp;
       const delta = (timestamp - lastTimeRef.current) / 1000;
       lastTimeRef.current = timestamp;
-
-      const framesPerSecond = animation.fps * playbackSpeed;
-      const newTime = currentTime + delta * framesPerSecond;
-
-      if (newTime >= animation.duration) {
-        if (loop) {
-          setCurrentTime(0);
-        } else {
-          setCurrentTime(animation.duration);
-          setPlaying(false);
-        }
-      } else {
-        setCurrentTime(newTime);
-      }
-
+      const fps = scene.fps * store.playbackSpeed;
+      const newTime = store.currentTime + delta * fps;
+      if (newTime >= scene.duration) {
+        if (store.loop) store.setCurrentTime(0);
+        else { store.setCurrentTime(scene.duration); store.setPlaying(false); }
+      } else store.setCurrentTime(newTime);
       animFrameRef.current = requestAnimationFrame(animate);
     };
-
     animFrameRef.current = requestAnimationFrame(animate);
-    return () => {
-      cancelAnimationFrame(animFrameRef.current);
-      lastTimeRef.current = 0;
-    };
-  }, [isPlaying, currentTime, playbackSpeed, loop, selectedSkeletonId, selectedAnimationId, project, setCurrentTime, setPlaying]);
+    return () => { cancelAnimationFrame(animFrameRef.current); lastTimeRef.current = 0; };
+  }, [store.isPlaying, store.currentTime, store.playbackSpeed, store.loop]);
 
-  // Render loop
+  // Render
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const scene = store.getActiveScene();
+    if (!scene) return;
+    const camera = store.getActiveCamera();
 
-    // Clear
     ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
-
-    // Background
-    ctx.fillStyle = project.backgroundColor;
+    ctx.fillStyle = store.project.backgroundColor;
     ctx.fillRect(0, 0, canvasSize.width, canvasSize.height);
 
-    // Apply zoom and pan
+    // Apply camera transform
     ctx.save();
-    ctx.translate(panOffset.x, panOffset.y);
-    ctx.scale(zoom, zoom);
-
-    // Draw grid
-    if (showGrid) {
-      drawGrid(ctx, canvasSize.width, canvasSize.height, zoom);
+    if (camera) {
+      const cx = canvasSize.width / 2;
+      const cy = canvasSize.height / 2;
+      ctx.translate(cx, cy);
+      ctx.scale(camera.zoom * store.zoom, camera.zoom * store.zoom);
+      ctx.rotate(camera.rotation);
+      ctx.translate(-camera.position.x + store.panOffset.x, -camera.position.y + store.panOffset.y);
+    } else {
+      ctx.translate(store.panOffset.x, store.panOffset.y);
+      ctx.scale(store.zoom, store.zoom);
     }
 
-    // Draw skeleton
-    if (selectedSkeletonId) {
-      const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-      if (skeleton) {
-        // Build bone map with interpolated transforms
-        const boneMap = new Map<string, Bone>();
-        skeleton.bones.forEach(boneData => {
-          const bone = new Bone(boneData);
-          // Apply interpolated transform if playing or animation exists
-          if (selectedAnimationId) {
-            const interpolated = getInterpolatedTransform(bone.id, currentTime);
-            if (interpolated) {
-              bone.localTransform = { ...interpolated };
-            }
-          }
-          boneMap.set(bone.id, bone);
-        });
+    // Draw grid
+    if (store.showGrid) drawGrid(ctx, canvasSize.width, canvasSize.height, store.zoom);
 
-        // Calculate global transforms
-        calculateAllGlobalTransforms(boneMap);
+    // Draw backgrounds
+    const sortedBgs = [...scene.backgrounds].sort((a, b) => a.zIndex - b.zIndex);
+    sortedBgs.forEach(bg => {
+      if (bg.visible) drawBackground(ctx, bg, canvasSize, store.project.assets);
+    });
 
-        // Draw bones
-        boneMap.forEach((bone) => {
-          const isSelected = bone.id === selectedBoneId;
-          drawBone(ctx, bone, boneMap, isSelected);
-        });
+    // Draw characters
+    const sortedChars = [...scene.characters].sort((a, b) => a.zIndex - b.zIndex);
+    sortedChars.forEach(char => {
+      if (!char.visible) return;
+      ctx.save();
+      ctx.translate(char.position.x, char.position.y);
+      ctx.rotate(char.rotation);
+      ctx.scale(char.scale.x, char.scale.y);
+      ctx.translate(-char.position.x, -char.position.y);
 
-        // Draw slots (sprites)
-        skeleton.slots.forEach(slot => {
-          const bone = boneMap.get(slot.boneId);
-          if (bone && slot.assetId) {
-            drawSlot(ctx, slot, bone, skeleton);
-          }
-        });
-      }
+      const boneMap = new Map<string, Bone>();
+      const allKeyframes = char.animations.find(a => a.id === store.selectedAnimationId)?.keyframes || [];
+      char.bones.forEach(bd => {
+        const bone = new Bone(bd);
+        const interp = getInterpolatedTransform(bone.id, store.currentTime, char.bones, allKeyframes);
+        if (interp) bone.localTransform = { ...interp };
+        boneMap.set(bone.id, bone);
+      });
+      calculateAllGlobalTransforms(boneMap);
+      boneMap.forEach(bone => {
+        if (!bone.visible) return;
+        drawBone(ctx, bone, boneMap, bone.id === store.selectedBoneId);
+      });
+      ctx.restore();
+    });
+
+    // Camera viewport indicator
+    if (camera) {
+      ctx.strokeStyle = 'rgba(255, 100, 100, 0.3)';
+      ctx.lineWidth = 2 / (store.zoom * camera.zoom);
+      ctx.setLineDash([8, 4]);
+      ctx.strokeRect(
+        camera.position.x - camera.viewportWidth / 2,
+        camera.position.y - camera.viewportHeight / 2,
+        camera.viewportWidth,
+        camera.viewportHeight
+      );
+      ctx.setLineDash([]);
     }
 
     ctx.restore();
-  }, [canvasSize, project, selectedSkeletonId, selectedBoneId, selectedAnimationId, currentTime, zoom, panOffset, showGrid, tool, getInterpolatedTransform]);
+  }, [canvasSize, store.project, store.currentTime, store.zoom, store.panOffset, store.showGrid, store.selectedBoneId, store.selectedAnimationId, store.getActiveScene, store.getActiveCamera, getInterpolatedTransform]);
 
-  // Mouse handlers
+  // Mouse
   const handleMouseDown = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const rect = canvas.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left - panOffset.x) / zoom;
-    const mouseY = (e.clientY - rect.top - panOffset.y) / zoom;
+    const mouseX = (e.clientX - rect.left - store.panOffset.x) / store.zoom;
+    const mouseY = (e.clientY - rect.top - store.panOffset.y) / store.zoom;
+    const scene = store.getActiveScene();
+    if (!scene) return;
 
-    if (tool === 'bone' && e.button === 0) {
-      // Add bone at click position
-      addBone(selectedBoneId);
+    if (store.tool === 'bone' && e.button === 0) {
+      store.addBone(store.selectedBoneId);
       return;
     }
 
-    if (tool === 'select' || tool === 'move') {
-      // Try to select a bone
-      const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-      if (skeleton) {
+    if (store.tool === 'select' || store.tool === 'move') {
+      let closestBone: string | null = null;
+      let closestDist = 20;
+      let closestCharId: string | null = null;
+
+      scene.characters.forEach(char => {
+        if (!char.visible) return;
         const boneMap = new Map<string, Bone>();
-        skeleton.bones.forEach(boneData => {
-          const bone = new Bone(boneData);
-          if (selectedAnimationId) {
-            const interpolated = getInterpolatedTransform(bone.id, currentTime);
-            if (interpolated) bone.localTransform = { ...interpolated };
-          }
+        const allKf = char.animations.find(a => a.id === store.selectedAnimationId)?.keyframes || [];
+        char.bones.forEach(bd => {
+          const bone = new Bone(bd);
+          const interp = getInterpolatedTransform(bone.id, store.currentTime, char.bones, allKf);
+          if (interp) bone.localTransform = { ...interp };
           boneMap.set(bone.id, bone);
         });
         calculateAllGlobalTransforms(boneMap);
-
-        let closestBone: string | null = null;
-        let closestDist = 20; // hit radius
-
-        boneMap.forEach((bone) => {
-          const dist = Math.sqrt(
-            Math.pow(mouseX - bone.globalTransform.position.x, 2) +
-            Math.pow(mouseY - bone.globalTransform.position.y, 2)
-          );
-          if (dist < closestDist) {
-            closestDist = dist;
-            closestBone = bone.id;
-          }
+        boneMap.forEach(bone => {
+          const dx = mouseX - bone.globalTransform.position.x;
+          const dy = mouseY - bone.globalTransform.position.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < closestDist) { closestDist = dist; closestBone = bone.id; closestCharId = char.id; }
         });
+      });
 
-        if (closestBone) {
-          selectBone(closestBone);
-          setIsDragging(true);
-          setDragStart({ x: mouseX, y: mouseY });
-        } else {
-          selectBone(null);
-        }
+      if (closestBone) {
+        store.selectCharacter(closestCharId);
+        store.selectBone(closestBone);
+        setIsDragging(true);
+        setDragStart({ x: mouseX, y: mouseY });
+      } else {
+        store.selectBone(null);
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - store.panOffset.x, y: e.clientY - store.panOffset.y });
       }
-    }
-
-    // Pan with middle mouse or when no bone selected
-    if (e.button === 1 || (e.button === 0 && !selectedBoneId && tool === 'select')) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
-
-    if (tool === 'move' && selectedBoneId) {
+    if (store.tool === 'move' && store.selectedBoneId) {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const mouseX = (e.clientX - rect.left - panOffset.x) / zoom;
-      const mouseY = (e.clientY - rect.top - panOffset.y) / zoom;
-
+      const mouseX = (e.clientX - rect.left - store.panOffset.x) / store.zoom;
+      const mouseY = (e.clientY - rect.top - store.panOffset.y) / store.zoom;
       const dx = mouseX - dragStart.x;
       const dy = mouseY - dragStart.y;
-
-      const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-      if (skeleton) {
-        const bone = skeleton.bones.find(b => b.id === selectedBoneId);
+      const char = store.getActiveCharacter();
+      if (char) {
+        const bone = char.bones.find(b => b.id === store.selectedBoneId);
         if (bone) {
-          updateBoneTransform(selectedBoneId, {
-            position: {
-              x: bone.localTransform.position.x + dx,
-              y: bone.localTransform.position.y + dy,
-            },
-          });
+          store.updateBoneTransform(store.selectedBoneId, { position: { x: bone.localTransform.position.x + dx, y: bone.localTransform.position.y + dy } });
           setDragStart({ x: mouseX, y: mouseY });
         }
       }
-    } else if (tool === 'rotate' && selectedBoneId) {
+    } else if (store.tool === 'rotate' && store.selectedBoneId) {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const mouseX = (e.clientX - rect.left - panOffset.x) / zoom;
-      const mouseY = (e.clientY - rect.top - panOffset.y) / zoom;
-
-      const skeleton = project.skeletons.find(s => s.id === selectedSkeletonId);
-      if (skeleton) {
-        const bone = skeleton.bones.find(b => b.id === selectedBoneId);
+      const mouseX = (e.clientX - rect.left - store.panOffset.x) / store.zoom;
+      const mouseY = (e.clientY - rect.top - store.panOffset.y) / store.zoom;
+      const char = store.getActiveCharacter();
+      if (char) {
+        const bone = char.bones.find(b => b.id === store.selectedBoneId);
         if (bone) {
           const angle = Math.atan2(mouseY - bone.globalTransform.position.y, mouseX - bone.globalTransform.position.x);
-          updateBoneTransform(selectedBoneId, { rotation: angle });
+          store.updateBoneTransform(store.selectedBoneId, { rotation: angle });
         }
       }
     } else {
-      // Pan
-      setPanOffset({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
+      store.setPanOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
     }
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(zoom * delta);
-  };
+  const handleMouseUp = () => setIsDragging(false);
+  const handleWheel = (e: React.WheelEvent) => { e.preventDefault(); store.setZoom(store.zoom * (e.deltaY > 0 ? 0.9 : 1.1)); };
 
   return (
     <div ref={containerRef} className="flex-1 relative overflow-hidden bg-gray-900">
-      <canvas
-        ref={canvasRef}
-        width={canvasSize.width}
-        height={canvasSize.height}
-        className="absolute inset-0 cursor-crosshair"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
-      />
-      {/* Info overlay */}
-      <div className="absolute top-2 left-2 text-xs text-gray-400 bg-black/50 px-2 py-1 rounded">
-        Zoom: {(zoom * 100).toFixed(0)}% | Frame: {currentTime.toFixed(1)}
+      <canvas ref={canvasRef} width={canvasSize.width} height={canvasSize.height} className="absolute inset-0 cursor-crosshair" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} onWheel={handleWheel} />
+      <div className="absolute top-2 left-2 text-xs text-gray-400 bg-black/50 px-2 py-1 rounded pointer-events-none">
+        Zoom: {(store.zoom * 100).toFixed(0)}% | Frame: {store.currentTime.toFixed(1)} | Cámara: {store.getActiveCamera()?.name || 'Ninguna'}
       </div>
     </div>
   );
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number, zoom: number) {
-  const gridSize = 50;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, zoom: number) {
+  const gs = 50;
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
   ctx.lineWidth = 1 / zoom;
-
-  for (let x = 0; x < width / zoom; x += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height / zoom);
-    ctx.stroke();
-  }
-
-  for (let y = 0; y < height / zoom; y += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width / zoom, y);
-    ctx.stroke();
-  }
-
-  // Origin crosshair
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-  ctx.lineWidth = 1 / zoom;
-  ctx.beginPath();
-  ctx.moveTo(width / (2 * zoom), 0);
-  ctx.lineTo(width / (2 * zoom), height / zoom);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(0, height / (2 * zoom));
-  ctx.lineTo(width / zoom, height / (2 * zoom));
-  ctx.stroke();
+  for (let x = 0; x < w / zoom + 200; x += gs) { ctx.beginPath(); ctx.moveTo(x - 100, -100); ctx.lineTo(x - 100, h / zoom + 100); ctx.stroke(); }
+  for (let y = 0; y < h / zoom + 200; y += gs) { ctx.beginPath(); ctx.moveTo(-100, y - 100); ctx.lineTo(w / zoom + 100, y - 100); ctx.stroke(); }
 }
 
-function drawBone(
-  ctx: CanvasRenderingContext2D,
-  bone: Bone,
-  boneMap: Map<string, Bone>,
-  isSelected: boolean
-) {
+function drawBackground(ctx: CanvasRenderingContext2D, bg: BackgroundLayer, size: { width: number; height: number }, assets: { id: string; src: string }[]) {
+  ctx.save();
+  ctx.globalAlpha = bg.opacity;
+  if (bg.type === 'color' && bg.color) {
+    ctx.fillStyle = bg.color;
+    ctx.fillRect(-200, -200, size.width + 400, size.height + 400);
+  } else if (bg.type === 'gradient' && bg.gradientColors) {
+    const angle = (bg.gradientAngle || 0) * Math.PI / 180;
+    const gx = Math.cos(angle);
+    const gy = Math.sin(angle);
+    const grad = ctx.createLinearGradient(size.width / 2 - gx * 300, size.height / 2 - gy * 300, size.width / 2 + gx * 300, size.height / 2 + gy * 300);
+    bg.gradientColors.forEach((c, i) => grad.addColorStop(i / (bg.gradientColors!.length - 1), c));
+    ctx.fillStyle = grad;
+    ctx.fillRect(-200, -200, size.width + 400, size.height + 400);
+  } else if (bg.type === 'image' && bg.assetId) {
+    const asset = assets.find(a => a.id === bg.assetId);
+    if (asset) {
+      const img = new Image();
+      img.src = asset.src;
+      ctx.drawImage(img, 0, 0, size.width, size.height);
+    }
+  }
+  ctx.restore();
+}
+
+function drawBone(ctx: CanvasRenderingContext2D, bone: Bone, boneMap: Map<string, Bone>, isSelected: boolean) {
   const pos = bone.globalTransform.position;
   const end = bone.getEndPoint();
-
-  // Draw bone line
   ctx.beginPath();
   ctx.moveTo(pos.x, pos.y);
   ctx.lineTo(end.x, end.y);
   ctx.strokeStyle = isSelected ? '#FFD700' : bone.color;
   ctx.lineWidth = isSelected ? 3 : 2;
+  ctx.lineCap = 'round';
   ctx.stroke();
-
-  // Draw diamond shape for bone
-  const size = isSelected ? 8 : 6;
+  const sz = isSelected ? 8 : 6;
   ctx.beginPath();
-  ctx.moveTo(pos.x, pos.y - size);
-  ctx.lineTo(pos.x + size, pos.y);
-  ctx.lineTo(pos.x, pos.y + size);
-  ctx.lineTo(pos.x - size, pos.y);
-  ctx.closePath();
+  ctx.moveTo(pos.x, pos.y - sz); ctx.lineTo(pos.x + sz, pos.y); ctx.lineTo(pos.x, pos.y + sz); ctx.lineTo(pos.x - sz, pos.y); ctx.closePath();
   ctx.fillStyle = isSelected ? '#FFD700' : bone.color;
   ctx.fill();
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 1;
   ctx.stroke();
-
-  // Draw end joint
   ctx.beginPath();
   ctx.arc(end.x, end.y, 3, 0, Math.PI * 2);
   ctx.fillStyle = isSelected ? '#FFD700' : bone.color;
   ctx.fill();
-
-  // Draw bone name
-  ctx.font = '11px sans-serif';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
   ctx.textAlign = 'center';
   ctx.fillText(bone.name, pos.x, pos.y - 12);
-
-  // Draw connection to parent
-  if (bone.parentId) {
-    const parent = boneMap.get(bone.parentId);
-    if (parent) {
-      ctx.beginPath();
-      ctx.setLineDash([4, 4]);
-      ctx.moveTo(parent.globalTransform.position.x, parent.globalTransform.position.y);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+  if (bone.locked) {
+    ctx.fillStyle = 'rgba(255,100,100,0.8)';
+    ctx.fillText('🔒', pos.x + 15, pos.y - 12);
   }
-}
-
-function drawSlot(
-  ctx: CanvasRenderingContext2D,
-  slot: { assetId: string | null; offset: { x: number; y: number }; scale: { x: number; y: number }; rotation: number; opacity: number },
-  bone: Bone,
-  skeleton: { assets: { id: string; src: string; width: number; height: number }[] }
-) {
-  if (!slot.assetId) return;
-  const asset = skeleton.assets.find(a => a.id === slot.assetId);
-  if (!asset) return;
-
-  // Draw placeholder rectangle for the asset
-  ctx.save();
-  ctx.translate(
-    bone.globalTransform.position.x + slot.offset.x,
-    bone.globalTransform.position.y + slot.offset.y
-  );
-  ctx.rotate(bone.globalTransform.rotation + slot.rotation);
-  ctx.scale(
-    bone.globalTransform.scale.x * slot.scale.x,
-    bone.globalTransform.scale.y * slot.scale.y
-  );
-  ctx.globalAlpha = slot.opacity;
-
-  // Draw a colored rectangle as placeholder
-  ctx.fillStyle = 'rgba(100, 200, 255, 0.3)';
-  ctx.fillRect(-asset.width / 2, -asset.height / 2, asset.width, asset.height);
-  ctx.strokeStyle = 'rgba(100, 200, 255, 0.6)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(-asset.width / 2, -asset.height / 2, asset.width, asset.height);
-
-  ctx.restore();
 }
