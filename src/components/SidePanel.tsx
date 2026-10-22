@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAnimationStore } from '../stores/animationStore';
 import { AgentAPIConfig, AgentProvider } from '../engine/types';
 import { ModelsPanel } from './ModelsPanel';
@@ -324,6 +324,171 @@ function CharactersTab() {
   );
 }
 
+function NewApiForm({ 
+  models, 
+  loading, 
+  provider, 
+  setProvider, 
+  baseUrl, 
+  setBaseUrl, 
+  apiKey, 
+  setApiKey,
+  onCreate,
+  onCancel
+}: {
+  models: any[];
+  loading: boolean;
+  provider: AgentProvider;
+  setProvider: (p: AgentProvider) => void;
+  baseUrl: string;
+  setBaseUrl: (url: string) => void;
+  apiKey: string;
+  setApiKey: (key: string) => void;
+  onCreate: (data: any) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [customModel, setCustomModel] = useState('');
+
+  const providersWithListing = ['ollama', 'openrouter', 'groq', 'openai', 'claude', 'huggingface', 'opencode'];
+  const hasListing = providersWithListing.includes(provider);
+
+  const handleCreate = () => {
+    const model = selectedModel || customModel;
+    if (!name || !model) return;
+    
+    const defaultUrls: Record<string, string> = {
+      ollama: 'http://localhost:11434',
+      openrouter: 'https://openrouter.ai/api/v1',
+      groq: 'https://api.groq.com/openai/v1',
+      openai: 'https://api.openai.com/v1',
+      claude: 'https://api.anthropic.com/v1',
+      huggingface: 'https://api-inference.huggingface.co/models',
+      opencode: 'https://api.opencode.ai/v1',
+      ngrok: '',
+      custom: '',
+    };
+
+    onCreate({
+      name,
+      provider,
+      baseUrl: baseUrl || defaultUrls[provider],
+      apiKey,
+      model,
+      maxTokens: 2048,
+      temperature: 0.7,
+      enabled: true,
+    });
+  };
+
+  return (
+    <div className="mt-2 p-2 bg-gray-800 rounded border border-blue-700 space-y-1.5">
+      <input 
+        type="text" 
+        value={name}
+        onChange={e => setName(e.target.value)}
+        placeholder="Nombre de la API" 
+        className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
+      />
+      <select 
+        value={provider}
+        onChange={e => setProvider(e.target.value as AgentProvider)}
+        className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none"
+      >
+        <option value="ollama">Ollama (Local)</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="groq">Groq</option>
+        <option value="openai">OpenAI</option>
+        <option value="claude">Claude</option>
+        <option value="huggingface">HuggingFace</option>
+        <option value="opencode">OpenCode</option>
+        <option value="ngrok">Ngrok Tunnel</option>
+        <option value="custom">Custom</option>
+      </select>
+      <input 
+        type="text" 
+        value={baseUrl}
+        onChange={e => setBaseUrl(e.target.value)}
+        placeholder="Base URL (opcional)" 
+        className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
+      />
+      <input 
+        type="password" 
+        value={apiKey}
+        onChange={e => setApiKey(e.target.value)}
+        placeholder="API Key (opcional)" 
+        className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
+      />
+      
+      {/* Selector de modelos */}
+      {hasListing ? (
+        <div className="space-y-1">
+          <label className="text-[8px] text-gray-400 flex items-center gap-1">
+            <span>Modelo</span>
+            {loading && <span className="text-blue-400 animate-pulse">⏳ Cargando...</span>}
+            {!loading && models.length > 0 && <span className="text-green-400">✓ {models.length} disponibles</span>}
+          </label>
+          {models.length > 0 ? (
+            <select 
+              value={selectedModel}
+              onChange={e => setSelectedModel(e.target.value)}
+              className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none"
+            >
+              <option value="">-- Seleccionar modelo --</option>
+              {models.map((model: any) => (
+                <option key={model.id} value={model.id}>
+                  {model.name || model.id}
+                  {model.contextLength ? ` (${(model.contextLength / 1000).toFixed(0)}k)` : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div>
+              <input 
+                type="text" 
+                value={customModel}
+                onChange={e => setCustomModel(e.target.value)}
+                placeholder="Modelo (escribe el ID manualmente)" 
+                className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
+              />
+              {!loading && (
+                <p className="text-[8px] text-yellow-400 mt-0.5">
+                  ⚠️ No se pudieron cargar los modelos. Verifica las credenciales.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <input 
+          type="text" 
+          value={customModel}
+          onChange={e => setCustomModel(e.target.value)}
+          placeholder="Modelo" 
+          className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
+        />
+      )}
+      
+      <div className="flex gap-1">
+        <button 
+          onClick={handleCreate}
+          disabled={!name || (!selectedModel && !customModel)}
+          className="flex-1 bg-blue-600 text-white text-[10px] rounded px-2 py-1 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Crear API
+        </button>
+        <button 
+          onClick={onCancel}
+          className="text-[10px] bg-gray-700 text-gray-400 rounded px-2 py-1 hover:bg-gray-600"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function renderBoneTree(
   bones: { id: string; name: string; parentId: string | null; color: string; locked: boolean; visible: boolean }[],
   parentId: string | null,
@@ -502,6 +667,13 @@ function AgentsTab() {
   const [newApi, setNewApi] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [selectedApiForTask, setSelectedApiForTask] = useState(store.agentConfig.defaultApiId || '');
+  const [modelsByApi, setModelsByApi] = useState<Record<string, any[]>>({});
+  const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>({});
+  const [newApiModels, setNewApiModels] = useState<any[]>([]);
+  const [loadingNewApiModels, setLoadingNewApiModels] = useState(false);
+  const [newApiProvider, setNewApiProvider] = useState<AgentProvider>('ollama');
+  const [newApiBaseUrl, setNewApiBaseUrl] = useState('');
+  const [newApiKey, setNewApiKey] = useState('');
 
   const providerLabels: Record<AgentProvider, string> = { 
     ollama: '🏠 Ollama', 
@@ -514,6 +686,76 @@ function AgentsTab() {
     ngrok: '🔗 Ngrok',
     custom: '🔧 Custom' 
   };
+
+  // Cargar modelos cuando se edita una API
+  useEffect(() => {
+    if (!editingApi) return;
+    
+    const api = store.agentConfig.apis.find(a => a.id === editingApi);
+    if (!api) return;
+
+    // Solo cargar si el proveedor soporta listado dinámico
+    const providersWithListing = ['ollama', 'openrouter', 'groq', 'openai', 'claude', 'huggingface', 'opencode'];
+    if (!providersWithListing.includes(api.provider)) return;
+
+    const loadModels = async () => {
+      setLoadingModels(prev => ({ ...prev, [editingApi]: true }));
+      try {
+        const models = await store.fetchModelsForProvider(
+          api.provider,
+          api.apiKey,
+          api.baseUrl
+        );
+        setModelsByApi(prev => ({ ...prev, [editingApi]: models }));
+      } catch (error) {
+        console.error('Error loading models:', error);
+        setModelsByApi(prev => ({ ...prev, [editingApi]: [] }));
+      } finally {
+        setLoadingModels(prev => ({ ...prev, [editingApi]: false }));
+      }
+    };
+
+    loadModels();
+  }, [editingApi, store.agentConfig.apis.find(a => a.id === editingApi)?.apiKey, store.agentConfig.apis.find(a => a.id === editingApi)?.baseUrl, store.agentConfig.apis.find(a => a.id === editingApi)?.provider]);
+
+  // Cargar modelos para nueva API
+  useEffect(() => {
+    if (!newApi) return;
+
+    const providersWithListing = ['ollama', 'openrouter', 'groq', 'openai', 'claude', 'huggingface', 'opencode'];
+    if (!providersWithListing.includes(newApiProvider)) return;
+
+    const loadModels = async () => {
+      setLoadingNewApiModels(true);
+      try {
+        const defaultUrls: Record<string, string> = {
+          ollama: 'http://localhost:11434',
+          openrouter: 'https://openrouter.ai/api/v1',
+          groq: 'https://api.groq.com/openai/v1',
+          openai: 'https://api.openai.com/v1',
+          claude: 'https://api.anthropic.com/v1',
+          huggingface: 'https://api-inference.huggingface.co/models',
+          opencode: 'https://api.opencode.ai/v1',
+        };
+        
+        const models = await store.fetchModelsForProvider(
+          newApiProvider,
+          newApiKey,
+          newApiBaseUrl || defaultUrls[newApiProvider]
+        );
+        setNewApiModels(models);
+      } catch (error) {
+        console.error('Error loading models:', error);
+        setNewApiModels([]);
+      } finally {
+        setLoadingNewApiModels(false);
+      }
+    };
+
+    // Debounce para no hacer requests constantes
+    const timeoutId = setTimeout(loadModels, 500);
+    return () => clearTimeout(timeoutId);
+  }, [newApi, newApiProvider, newApiBaseUrl, newApiKey]);
 
   const handleRunTask = async () => {
     if (!prompt.trim() || !selectedApiForTask) return;
@@ -601,7 +843,60 @@ function AgentsTab() {
                   </select>
                   <input type="text" value={api.baseUrl} onChange={e => store.updateAgentAPI(api.id, { baseUrl: e.target.value })} placeholder="Base URL" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
                   <input type="password" value={api.apiKey || ''} onChange={e => store.updateAgentAPI(api.id, { apiKey: e.target.value })} placeholder="API Key (opcional)" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
-                  <input type="text" value={api.model} onChange={e => store.updateAgentAPI(api.id, { model: e.target.value })} placeholder="Modelo" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
+                  
+                  {/* Selector de modelos */}
+                  {(() => {
+                    const models = modelsByApi[editingApi] || [];
+                    const isLoading = loadingModels[editingApi];
+                    const providersWithListing = ['ollama', 'openrouter', 'groq', 'openai', 'claude', 'huggingface', 'opencode'];
+                    const hasListing = providersWithListing.includes(api.provider);
+                    
+                    if (!hasListing) {
+                      return (
+                        <input type="text" value={api.model} onChange={e => store.updateAgentAPI(api.id, { model: e.target.value })} placeholder="Modelo" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
+                      );
+                    }
+                    
+                    return (
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-gray-400 flex items-center gap-1">
+                          <span>Modelo</span>
+                          {isLoading && <span className="text-blue-400 animate-pulse">⏳ Cargando...</span>}
+                          {!isLoading && models.length > 0 && <span className="text-green-400">✓ {models.length} disponibles</span>}
+                        </label>
+                        {models.length > 0 ? (
+                          <select 
+                            value={api.model} 
+                            onChange={e => store.updateAgentAPI(api.id, { model: e.target.value })} 
+                            className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none max-h-40"
+                          >
+                            <option value="">-- Seleccionar modelo --</option>
+                            {models.map((model: any) => (
+                              <option key={model.id} value={model.id}>
+                                {model.name || model.id}
+                                {model.contextLength ? ` (${(model.contextLength / 1000).toFixed(0)}k)` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div>
+                            <input 
+                              type="text" 
+                              value={api.model} 
+                              onChange={e => store.updateAgentAPI(api.id, { model: e.target.value })} 
+                              placeholder="Modelo (escribe el ID manualmente)" 
+                              className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
+                            />
+                            {!isLoading && (
+                              <p className="text-[8px] text-yellow-400 mt-0.5">
+                                ⚠️ No se pudieron cargar los modelos. Verifica las credenciales.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="flex gap-1">
                     <div className="flex-1"><label className="text-[8px] text-gray-500">Max Tokens</label><input type="number" value={api.maxTokens} onChange={e => store.updateAgentAPI(api.id, { maxTokens: +e.target.value })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none" /></div>
                     <div className="flex-1"><label className="text-[8px] text-gray-500">Temp</label><input type="number" step="0.1" min="0" max="2" value={api.temperature} onChange={e => store.updateAgentAPI(api.id, { temperature: +e.target.value })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none" /></div>
@@ -618,32 +913,28 @@ function AgentsTab() {
 
         {/* New API form */}
         {newApi && (
-          <div className="mt-2 p-2 bg-gray-800 rounded border border-blue-700 space-y-1.5">
-            <input type="text" placeholder="Nombre de la API" id="newApiName" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
-            <select id="newApiProvider" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none">
-              <option value="ollama">Ollama (Local)</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="groq">Groq</option>
-              <option value="openai">OpenAI</option>
-              <option value="claude">Claude</option>
-              <option value="huggingface">HuggingFace</option>
-              <option value="opencode">OpenCode</option>
-              <option value="ngrok">Ngrok Tunnel</option>
-              <option value="custom">Custom</option>
-            </select>
-            <input type="text" placeholder="Base URL" id="newApiUrl" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
-            <input type="password" placeholder="API Key" id="newApiKey" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
-            <input type="text" placeholder="Modelo" id="newApiModel" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
-            <button onClick={() => {
-              const name = (document.getElementById('newApiName') as HTMLInputElement)?.value || 'Nueva API';
-              const provider = (document.getElementById('newApiProvider') as HTMLSelectElement)?.value as AgentProvider;
-              const baseUrl = (document.getElementById('newApiUrl') as HTMLInputElement)?.value || '';
-              const apiKey = (document.getElementById('newApiKey') as HTMLInputElement)?.value || '';
-              const model = (document.getElementById('newApiModel') as HTMLInputElement)?.value || '';
-              store.addAgentAPI({ name, provider, baseUrl, apiKey, model, maxTokens: 2048, temperature: 0.7, enabled: true });
+          <NewApiForm 
+            models={newApiModels}
+            loading={loadingNewApiModels}
+            provider={newApiProvider}
+            setProvider={setNewApiProvider}
+            baseUrl={newApiBaseUrl}
+            setBaseUrl={setNewApiBaseUrl}
+            apiKey={newApiKey}
+            setApiKey={setNewApiKey}
+            onCreate={(data) => {
+              store.addAgentAPI(data);
               setNewApi(false);
-            }} className="w-full bg-blue-600 text-white text-[10px] rounded px-2 py-1 hover:bg-blue-500">Crear API</button>
-          </div>
+              setNewApiModels([]);
+              setNewApiProvider('ollama');
+              setNewApiBaseUrl('');
+              setNewApiKey('');
+            }}
+            onCancel={() => {
+              setNewApi(false);
+              setNewApiModels([]);
+            }}
+          />
         )}
       </div>
     </div>
