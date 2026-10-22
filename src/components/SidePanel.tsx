@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { useAnimationStore } from '../stores/animationStore';
 import { AgentAPIConfig, AgentProvider } from '../engine/types';
+import { ModelsPanel } from './ModelsPanel';
+import { NgrokPanel } from './NgrokPanel';
 
 export function SidePanel() {
   const store = useAnimationStore();
@@ -31,10 +33,11 @@ export function SidePanel() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-700 bg-gray-800">
-        {(['characters', 'backgrounds', 'cameras', 'agents'] as const).map(tab => (
-          <button key={tab} onClick={() => store.setActiveTab(tab)} className={`flex-1 py-2 text-[10px] font-medium transition-colors ${store.activeTab === tab ? 'text-blue-400 border-b-2 border-blue-400 bg-gray-800' : 'text-gray-500 hover:text-gray-300'}`}>
-            {tab === 'characters' ? '👤' : tab === 'backgrounds' ? '🏞️' : tab === 'cameras' ? '📷' : '🤖'} {tab === 'characters' ? 'Personajes' : tab === 'backgrounds' ? 'Fondos' : tab === 'cameras' ? 'Cámaras' : 'Agentes'}
+      <div className="flex border-b border-gray-700 bg-gray-800 overflow-x-auto">
+        {(['characters', 'backgrounds', 'cameras', 'agents', 'models', 'ngrok'] as const).map(tab => (
+          <button key={tab} onClick={() => store.setActiveTab(tab as any)} className={`flex-1 py-2 text-[10px] font-medium transition-colors whitespace-nowrap px-2 ${store.activeTab === tab ? 'text-blue-400 border-b-2 border-blue-400 bg-gray-800' : 'text-gray-500 hover:text-gray-300'}`}>
+            {tab === 'characters' ? '👤' : tab === 'backgrounds' ? '🏞️' : tab === 'cameras' ? '📷' : tab === 'agents' ? '🤖' : tab === 'models' ? '📋' : '🔗'} 
+            <span className="hidden sm:inline">{tab === 'characters' ? 'Personajes' : tab === 'backgrounds' ? 'Fondos' : tab === 'cameras' ? 'Cámaras' : tab === 'agents' ? 'Agentes' : tab === 'models' ? 'Modelos' : 'Ngrok'}</span>
           </button>
         ))}
       </div>
@@ -45,6 +48,8 @@ export function SidePanel() {
         {store.activeTab === 'backgrounds' && <BackgroundsTab />}
         {store.activeTab === 'cameras' && <CamerasTab />}
         {store.activeTab === 'agents' && <AgentsTab />}
+        {store.activeTab === 'models' && <ModelsPanel />}
+        {store.activeTab === 'ngrok' && <NgrokPanel />}
       </div>
 
       {/* Properties */}
@@ -498,7 +503,17 @@ function AgentsTab() {
   const [prompt, setPrompt] = useState('');
   const [selectedApiForTask, setSelectedApiForTask] = useState(store.agentConfig.defaultApiId || '');
 
-  const providerLabels: Record<AgentProvider, string> = { ollama: '🏠 Ollama', groq: '⚡ Groq', huggingface: '🤗 HuggingFace', openai: '🧠 OpenAI', claude: '🟣 Claude', custom: '🔧 Custom' };
+  const providerLabels: Record<AgentProvider, string> = { 
+    ollama: '🏠 Ollama', 
+    groq: '⚡ Groq', 
+    huggingface: '🤗 HuggingFace', 
+    openai: '🧠 OpenAI', 
+    claude: '🟣 Claude', 
+    openrouter: '🌐 OpenRouter',
+    opencode: '💻 OpenCode',
+    ngrok: '🔗 Ngrok',
+    custom: '🔧 Custom' 
+  };
 
   const handleRunTask = async () => {
     if (!prompt.trim() || !selectedApiForTask) return;
@@ -574,7 +589,15 @@ function AgentsTab() {
                 <>
                   <input type="text" value={api.name} onChange={e => store.updateAgentAPI(api.id, { name: e.target.value })} placeholder="Nombre" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
                   <select value={api.provider} onChange={e => store.updateAgentAPI(api.id, { provider: e.target.value as AgentProvider })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none">
-                    <option value="ollama">Ollama (Local)</option><option value="groq">Groq</option><option value="huggingface">HuggingFace</option><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="custom">Custom</option>
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="groq">Groq</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="claude">Claude</option>
+                    <option value="huggingface">HuggingFace</option>
+                    <option value="opencode">OpenCode</option>
+                    <option value="ngrok">Ngrok Tunnel</option>
+                    <option value="custom">Custom</option>
                   </select>
                   <input type="text" value={api.baseUrl} onChange={e => store.updateAgentAPI(api.id, { baseUrl: e.target.value })} placeholder="Base URL" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
                   <input type="password" value={api.apiKey || ''} onChange={e => store.updateAgentAPI(api.id, { apiKey: e.target.value })} placeholder="API Key (opcional)" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
@@ -598,7 +621,15 @@ function AgentsTab() {
           <div className="mt-2 p-2 bg-gray-800 rounded border border-blue-700 space-y-1.5">
             <input type="text" placeholder="Nombre de la API" id="newApiName" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
             <select id="newApiProvider" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none">
-              <option value="ollama">Ollama (Local)</option><option value="groq">Groq</option><option value="huggingface">HuggingFace</option><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="custom">Custom</option>
+              <option value="ollama">Ollama (Local)</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="groq">Groq</option>
+              <option value="openai">OpenAI</option>
+              <option value="claude">Claude</option>
+              <option value="huggingface">HuggingFace</option>
+              <option value="opencode">OpenCode</option>
+              <option value="ngrok">Ngrok Tunnel</option>
+              <option value="custom">Custom</option>
             </select>
             <input type="text" placeholder="Base URL" id="newApiUrl" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />
             <input type="password" placeholder="API Key" id="newApiKey" className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" />

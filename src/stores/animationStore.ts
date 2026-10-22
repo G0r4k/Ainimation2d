@@ -4,7 +4,7 @@ import {
   BoneData, AnimationData, KeyframeData, Transform, EasingType,
   AssetData, SlotData, ProjectData, SceneData, CharacterData,
   BackgroundLayer, CameraData, CameraAnimation, AgentSystemConfig,
-  AgentAPIConfig, AgentTask, WebhookConfig,
+  AgentAPIConfig, AgentTask, WebhookConfig, AgentProvider, AIModel, NgrokTunnel,
 } from '../engine/types';
 import { getDefaultTransform } from '../engine/interpolation';
 
@@ -102,7 +102,7 @@ interface AppState {
   panOffset: { x: number; y: number };
   tool: 'select' | 'move' | 'rotate' | 'scale' | 'bone';
   showGrid: boolean;
-  activeTab: 'characters' | 'backgrounds' | 'cameras' | 'agents';
+  activeTab: 'characters' | 'backgrounds' | 'cameras' | 'agents' | 'models' | 'ngrok';
   // Agent system
   agentConfig: AgentSystemConfig;
   // Helpers
@@ -165,7 +165,7 @@ interface AppState {
   setPanOffset: (o: { x: number; y: number }) => void;
   setTool: (t: 'select' | 'move' | 'rotate' | 'scale' | 'bone') => void;
   toggleGrid: () => void;
-  setActiveTab: (t: 'characters' | 'backgrounds' | 'cameras' | 'agents') => void;
+  setActiveTab: (t: 'characters' | 'backgrounds' | 'cameras' | 'agents' | 'models' | 'ngrok') => void;
   // Agent actions
   addAgentAPI: (config: Omit<AgentAPIConfig, 'id'>) => void;
   removeAgentAPI: (id: string) => void;
@@ -177,6 +177,13 @@ interface AppState {
   addWebhook: (config: Omit<WebhookConfig, 'id'>) => void;
   removeWebhook: (id: string) => void;
   updateWebhook: (id: string, updates: Partial<WebhookConfig>) => void;
+  // Ngrok actions
+  addNgrokTunnel: (tunnel: Omit<NgrokTunnel, 'id' | 'status' | 'publicUrl'>) => void;
+  removeNgrokTunnel: (id: string) => void;
+  startNgrokTunnel: (id: string) => Promise<void>;
+  stopNgrokTunnel: (id: string) => void;
+  // Model listing
+  fetchModelsForProvider: (provider: AgentProvider, apiKey?: string, baseUrl?: string) => Promise<AIModel[]>;
 }
 
 export const useAnimationStore = create<AppState>((set, get) => ({
@@ -203,7 +210,10 @@ export const useAnimationStore = create<AppState>((set, get) => ({
       { id: 'hf-free', name: 'HuggingFace', provider: 'huggingface', baseUrl: 'https://api-inference.huggingface.co/models', apiKey: '', model: 'mistralai/Mistral-7B-Instruct-v0.2', maxTokens: 2048, temperature: 0.7, enabled: false },
       { id: 'openai-api', name: 'OpenAI', provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', maxTokens: 4096, temperature: 0.7, enabled: false },
       { id: 'claude-api', name: 'Claude', provider: 'claude', baseUrl: 'https://api.anthropic.com/v1', apiKey: '', model: 'claude-3-5-sonnet-20241022', maxTokens: 4096, temperature: 0.7, enabled: false },
+      { id: 'openrouter-api', name: 'OpenRouter', provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: '', model: 'openai/gpt-4o-mini', maxTokens: 4096, temperature: 0.7, enabled: false },
+      { id: 'opencode-api', name: 'OpenCode', provider: 'opencode', baseUrl: 'https://api.opencode.ai/v1', apiKey: '', model: 'codellama-34b', maxTokens: 4096, temperature: 0.7, enabled: false },
     ],
+    ngrokTunnels: [],
     tasks: [],
     webhooks: [],
     defaultApiId: 'ollama-local',
@@ -485,7 +495,7 @@ export const useAnimationStore = create<AppState>((set, get) => ({
   setPanOffset: (o: { x: number; y: number }) => set({ panOffset: o }),
   setTool: (t: 'select' | 'move' | 'rotate' | 'scale' | 'bone') => set({ tool: t }),
   toggleGrid: () => set({ showGrid: !get().showGrid }),
-  setActiveTab: (t: 'characters' | 'backgrounds' | 'cameras' | 'agents') => set({ activeTab: t }),
+  setActiveTab: (t: 'characters' | 'backgrounds' | 'cameras' | 'agents' | 'models' | 'ngrok') => set({ activeTab: t }),
 
   addAgentAPI: (config: Omit<AgentAPIConfig, 'id'>) => {
     const { agentConfig } = get();
@@ -568,5 +578,160 @@ export const useAnimationStore = create<AppState>((set, get) => ({
     const { agentConfig } = get();
     const wh = agentConfig.webhooks.find(w => w.id === id);
     if (wh) { Object.assign(wh, updates); set({ agentConfig: { ...agentConfig } }); }
+  },
+
+  // Ngrok tunnel management
+  addNgrokTunnel: (tunnel: Omit<NgrokTunnel, 'id' | 'status' | 'publicUrl'>) => {
+    const { agentConfig } = get();
+    agentConfig.ngrokTunnels.push({ ...tunnel, id: uuidv4(), status: 'inactive' });
+    set({ agentConfig: { ...agentConfig } });
+  },
+  removeNgrokTunnel: (id: string) => {
+    const { agentConfig } = get();
+    agentConfig.ngrokTunnels = agentConfig.ngrokTunnels.filter(t => t.id !== id);
+    set({ agentConfig: { ...agentConfig } });
+  },
+  startNgrokTunnel: async (id: string) => {
+    const { agentConfig } = get();
+    const tunnel = agentConfig.ngrokTunnels.find(t => t.id === id);
+    if (!tunnel) return;
+    
+    tunnel.status = 'starting';
+    set({ agentConfig: { ...agentConfig } });
+    
+    try {
+      // Simulate ngrok tunnel creation (in real implementation, this would call ngrok API)
+      // For now, we'll simulate a successful tunnel
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      tunnel.status = 'active';
+      tunnel.publicUrl = `https://${Math.random().toString(36).substring(7)}.ngrok-free.app`;
+      set({ agentConfig: { ...agentConfig } });
+    } catch (error) {
+      tunnel.status = 'error';
+      set({ agentConfig: { ...agentConfig } });
+    }
+  },
+  stopNgrokTunnel: (id: string) => {
+    const { agentConfig } = get();
+    const tunnel = agentConfig.ngrokTunnels.find(t => t.id === id);
+    if (tunnel) {
+      tunnel.status = 'inactive';
+      tunnel.publicUrl = undefined;
+      set({ agentConfig: { ...agentConfig } });
+    }
+  },
+
+  // Fetch available models for a provider
+  fetchModelsForProvider: async (provider: AgentProvider, apiKey?: string, baseUrl?: string): Promise<AIModel[]> => {
+    try {
+      switch (provider) {
+        case 'ollama': {
+          const url = baseUrl || 'http://localhost:11434';
+          const response = await fetch(`${url}/api/tags`);
+          const data = await response.json();
+          return (data.models || []).map((m: any) => ({
+            id: m.name,
+            name: m.name,
+            provider: 'ollama',
+            description: `Modelo local Ollama: ${m.name}`,
+            contextLength: m.details?.parameter_size ? parseInt(m.details.parameter_size) : undefined,
+            capabilities: ['local', 'free', 'offline'],
+            status: 'stable',
+          }));
+        }
+        
+        case 'openrouter': {
+          const response = await fetch('https://openrouter.ai/api/v1/models');
+          const data = await response.json();
+          return (data.data || []).map((m: any) => ({
+            id: m.id,
+            name: m.name || m.id,
+            provider: 'openrouter',
+            description: m.description || `Modelo ${m.id}`,
+            contextLength: m.context_length,
+            pricing: m.pricing ? {
+              input: parseFloat(m.pricing.prompt) * 1000000,
+              output: parseFloat(m.pricing.completion) * 1000000,
+            } : undefined,
+            capabilities: m.architecture?.modality ? [m.architecture.modality] : [],
+            status: 'stable',
+          }));
+        }
+        
+        case 'groq': {
+          if (!apiKey) return [];
+          const response = await fetch('https://api.groq.com/openai/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          const data = await response.json();
+          return (data.data || []).map((m: any) => ({
+            id: m.id,
+            name: m.id,
+            provider: 'groq',
+            description: `Modelo Groq: ${m.id}`,
+            capabilities: ['fast', 'optimized'],
+            status: 'stable',
+          }));
+        }
+        
+        case 'openai': {
+          if (!apiKey) return [];
+          const response = await fetch('https://api.openai.com/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          const data = await response.json();
+          return (data.data || [])
+            .filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o1'))
+            .map((m: any) => ({
+              id: m.id,
+              name: m.id,
+              provider: 'openai',
+              description: `Modelo OpenAI: ${m.id}`,
+              capabilities: ['multimodal', 'function-calling'],
+              status: 'stable',
+            }));
+        }
+        
+        case 'claude': {
+          // Claude doesn't have a public models endpoint, return predefined list
+          return [
+            { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', provider: 'claude', description: 'Modelo más capaz de Anthropic', contextLength: 200000, capabilities: ['vision', 'computer-use'], status: 'stable' },
+            { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', provider: 'claude', description: 'Modelo rápido y económico', contextLength: 200000, capabilities: ['fast', 'efficient'], status: 'stable' },
+            { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', provider: 'claude', description: 'Modelo premium de Anthropic', contextLength: 200000, capabilities: ['reasoning', 'analysis'], status: 'stable' },
+          ];
+        }
+        
+        case 'huggingface': {
+          if (!apiKey) return [];
+          const response = await fetch('https://api-inference.huggingface.co/models?pipeline=text-generation', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          const data = await response.json();
+          return (data || []).slice(0, 20).map((m: any) => ({
+            id: m.model_id || m.id,
+            name: m.model_id || m.id,
+            provider: 'huggingface',
+            description: `Modelo HuggingFace: ${m.model_id || m.id}`,
+            capabilities: ['open-source', 'community'],
+            status: 'stable',
+          }));
+        }
+        
+        case 'opencode': {
+          // OpenCode predefined models
+          return [
+            { id: 'codellama-34b', name: 'CodeLlama 34B', provider: 'opencode', description: 'Modelo especializado en código', contextLength: 16384, capabilities: ['code', 'programming'], status: 'stable' },
+            { id: 'deepseek-coder-33b', name: 'DeepSeek Coder 33B', provider: 'opencode', description: 'Modelo de código avanzado', contextLength: 16384, capabilities: ['code', 'infilling'], status: 'stable' },
+            { id: 'starcoder-15b', name: 'StarCoder 15B', provider: 'opencode', description: 'Modelo de código open-source', contextLength: 8192, capabilities: ['code', 'open-source'], status: 'stable' },
+          ];
+        }
+        
+        default:
+          return [];
+      }
+    } catch (error) {
+      console.error(`Error fetching models for ${provider}:`, error);
+      return [];
+    }
   },
 }));

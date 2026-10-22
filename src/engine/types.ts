@@ -205,7 +205,32 @@ export interface ProjectData {
 }
 
 // ---- AGENT SYSTEM ----
-export type AgentProvider = 'ollama' | 'groq' | 'huggingface' | 'openai' | 'claude' | 'custom';
+export type AgentProvider = 'ollama' | 'groq' | 'huggingface' | 'openai' | 'claude' | 'openrouter' | 'opencode' | 'ngrok' | 'custom';
+
+export interface AIModel {
+  id: string;
+  name: string;
+  provider: AgentProvider;
+  description?: string;
+  contextLength?: number;
+  pricing?: {
+    input?: number;
+    output?: number;
+  };
+  capabilities?: string[];
+  status?: 'stable' | 'beta' | 'deprecated';
+}
+
+export interface NgrokTunnel {
+  id: string;
+  name: string;
+  localPort: number;
+  publicUrl?: string;
+  status: 'inactive' | 'starting' | 'active' | 'error';
+  authToken?: string;
+  region?: string;
+  protocol?: 'http' | 'tcp';
+}
 
 export interface AgentAPIConfig {
   id: string;
@@ -219,6 +244,7 @@ export interface AgentAPIConfig {
   enabled: boolean;
   customHeaders?: Record<string, string>;
   customBody?: Record<string, unknown>;
+  ngrokTunnelId?: string;
 }
 
 export interface AgentTask {
@@ -249,6 +275,7 @@ export interface WebhookConfig {
 
 export interface AgentSystemConfig {
   apis: AgentAPIConfig[];
+  ngrokTunnels: NgrokTunnel[];
   tasks: AgentTask[];
   webhooks: WebhookConfig[];
   defaultApiId: string | null;
@@ -264,6 +291,6 @@ export interface UIState {
   selectedKeyframeId: string | null;
   selectedBackgroundId: string | null;
   selectedCameraId: string | null;
-  activeTab: 'bones' | 'backgrounds' | 'cameras' | 'agents';
+  activeTab: 'characters' | 'backgrounds' | 'cameras' | 'agents' | 'models' | 'ngrok';
   rightPanel: 'properties' | 'assets' | 'agents';
 }
