@@ -3,6 +3,7 @@ import { useAnimationStore } from '../stores/animationStore';
 import { Bone, calculateAllGlobalTransforms } from '../engine/Bone';
 import { getEasingValue, lerpTransform } from '../engine/interpolation';
 import { KeyframeData, Transform, BoneData, BackgroundLayer, CameraData } from '../engine/types';
+import { imageCache } from '../engine/ImageCache';
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,6 +26,16 @@ export function Canvas() {
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Re-render when images load
+  useEffect(() => {
+    const handleImageLoaded = () => {
+      // Trigger re-render by updating a dummy state
+      setCanvasSize(prev => ({ ...prev }));
+    };
+    window.addEventListener('imageLoaded', handleImageLoaded);
+    return () => window.removeEventListener('imageLoaded', handleImageLoaded);
   }, []);
 
   const getInterpolatedTransform = useCallback((boneId: string, time: number, bones: BoneData[], animKeyframes: KeyframeData[]): Transform | null => {
@@ -134,6 +145,21 @@ export function Canvas() {
         const asset = store.project.assets.find(a => a.id === slot.assetId);
         if (!asset) return;
         drawSlot(ctx, slot, bone, asset);
+      });
+
+      // Draw indicators on bones that have sprites
+      char.slots.forEach(slot => {
+        if (!slot.assetId) return;
+        const bone = boneMap.get(slot.boneId);
+        if (!bone || !bone.visible) return;
+        const isSelected = bone.id === store.selectedBoneId;
+        // Draw a small image icon on bones with sprites
+        ctx.save();
+        ctx.translate(bone.globalTransform.position.x + 12, bone.globalTransform.position.y - 12);
+        ctx.fillStyle = isSelected ? 'rgba(59, 130, 246, 0.9)' : 'rgba(100, 200, 255, 0.7)';
+        ctx.font = '10px sans-serif';
+        ctx.fillText('🖼', 0, 0);
+        ctx.restore();
       });
       ctx.restore();
     });
@@ -310,13 +336,22 @@ export function Canvas() {
         Zoom: {(store.zoom * 100).toFixed(0)}% | Frame: {store.currentTime.toFixed(1)} | Cámara: {store.getActiveCamera()?.name || 'Ninguna'}
       </div>
       {canvasDragOver && (
-        <div className="absolute inset-0 bg-blue-900/20 flex items-center justify-center pointer-events-none z-10">
-          <div className="bg-black/80 rounded-xl px-6 py-4 text-center">
-            <div className="text-4xl mb-2">📁</div>
-            <p className="text-sm text-white font-medium">Suelta la imagen aquí</p>
-            <p className="text-xs text-gray-400 mt-1">
-              {store.selectedBoneId ? 'Se asociará al hueso seleccionado' : 'Se agregará como fondo'}
-            </p>
+        <div className="absolute inset-0 bg-blue-900/30 flex items-center justify-center pointer-events-none z-10 backdrop-blur-sm">
+          <div className="bg-gray-900/95 border-2 border-blue-500 rounded-2xl px-8 py-6 text-center shadow-2xl">
+            <div className="text-5xl mb-3 animate-bounce">📁</div>
+            <p className="text-lg text-white font-bold">Suelta la imagen aquí</p>
+            <div className="mt-3 space-y-1">
+              {store.selectedBoneId ? (
+                <div className="bg-blue-900/50 rounded-lg px-3 py-1.5">
+                  <p className="text-sm text-blue-300 font-medium">🦴 Se asociará al hueso:</p>
+                  <p className="text-xs text-blue-200">{store.getActiveCharacter()?.bones.find(b => b.id === store.selectedBoneId)?.name}</p>
+                </div>
+              ) : (
+                <div className="bg-green-900/50 rounded-lg px-3 py-1.5">
+                  <p className="text-sm text-green-300 font-medium">🏞️ Se agregará como fondo</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -349,9 +384,8 @@ function drawBackground(ctx: CanvasRenderingContext2D, bg: BackgroundLayer, size
   } else if (bg.type === 'image' && bg.assetId) {
     const asset = assets.find(a => a.id === bg.assetId);
     if (asset) {
-      const img = new Image();
-      img.src = asset.src;
-      if (img.complete) {
+      const img = imageCache.get(asset.src);
+      if (img) {
         // Cover the canvas while maintaining aspect ratio
         const canvasRatio = size.width / size.height;
         const imgRatio = img.width / img.height;
@@ -373,9 +407,8 @@ function drawBackground(ctx: CanvasRenderingContext2D, bg: BackgroundLayer, size
   } else if (bg.type === 'parallax' && bg.assetId) {
     const asset = assets.find(a => a.id === bg.assetId);
     if (asset) {
-      const img = new Image();
-      img.src = asset.src;
-      if (img.complete) {
+      const img = imageCache.get(asset.src);
+      if (img) {
         const factor = bg.parallaxFactor || { x: 0.5, y: 0.5 };
         const offset = bg.scrollOffset || { x: 0, y: 0 };
         ctx.drawImage(img, offset.x * factor.x, offset.y * factor.y, size.width, size.height);
@@ -423,11 +456,9 @@ function drawSlot(
   bone: Bone,
   asset: { src: string; width: number; height: number }
 ) {
-  // Load and cache image
-  const img = new Image();
-  img.src = asset.src;
-  
-  if (!img.complete) return; // Skip if not loaded yet
+  // Get image from cache
+  const img = imageCache.get(asset.src);
+  if (!img) return; // Image not loaded yet
 
   ctx.save();
   

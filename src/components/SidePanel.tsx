@@ -62,32 +62,93 @@ export function SidePanel() {
             {/* Slot properties */}
             {char && (() => {
               const slot = char.slots.find(s => s.boneId === bone.id);
-              if (!slot) return (
-                <div className="pt-2 border-t border-gray-700">
-                  <p className="text-[9px] text-gray-500">Sin sprite asociado</p>
-                  <p className="text-[8px] text-gray-600 mt-0.5">Selecciona un asset y click "🦴 Sprite"</p>
-                </div>
-              );
+              if (!slot) {
+                const hasAssets = store.project.assets.length > 0;
+                return (
+                  <div className="pt-2 border-t border-gray-700">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-[9px] text-gray-400 font-medium">🖼️ Sprite</span>
+                      <span className="text-[8px] text-gray-500 bg-gray-700 px-1 rounded">No asignado</span>
+                    </div>
+                    {hasAssets ? (
+                      <div className="space-y-1">
+                        <p className="text-[8px] text-gray-500">Selecciona un asset abajo:</p>
+                        <div className="grid grid-cols-4 gap-0.5 max-h-16 overflow-y-auto">
+                          {store.project.assets.map(asset => (
+                            <button
+                              key={asset.id}
+                              onClick={() => store.addSlot(bone.id, asset.id)}
+                              className="aspect-square bg-gray-700 rounded border border-gray-600 hover:border-blue-500 hover:scale-110 transition-all overflow-hidden"
+                              title={`Asociar ${asset.name}`}
+                            >
+                              <img src={asset.src} alt={asset.name} className="w-full h-full object-contain" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[8px] text-gray-600">
+                        Importa imágenes en el panel de Assets (abajo) primero
+                      </p>
+                    )}
+                  </div>
+                );
+              }
               const asset = store.project.assets.find(a => a.id === slot.assetId);
               return (
                 <div className="pt-2 border-t border-gray-700 space-y-1.5">
-                  <h4 className="text-[9px] text-purple-400 font-semibold">🖼️ Sprite</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
+                      🖼️ Sprite Asignado
+                      <span className="text-[7px] bg-blue-900/50 text-blue-300 px-1 rounded">✓</span>
+                    </h4>
+                  </div>
                   {asset && (
-                    <div className="flex items-center gap-1.5">
-                      <img src={asset.src} alt={asset.name} className="w-8 h-8 object-contain bg-gray-700 rounded" />
-                      <span className="text-[9px] text-gray-300 truncate flex-1">{asset.name}</span>
-                      <button onClick={() => store.removeSlot(slot.id)} className="text-[9px] text-red-400 hover:text-red-300">✕</button>
+                    <div className="flex items-center gap-1.5 bg-gray-700/50 rounded p-1">
+                      <img src={asset.src} alt={asset.name} className="w-10 h-10 object-contain bg-gray-800 rounded border border-gray-600" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[9px] text-gray-200 font-medium truncate">{asset.name}</div>
+                        <div className="text-[8px] text-gray-500">{asset.width}×{asset.height}px</div>
+                      </div>
+                      <button
+                        onClick={() => store.removeSlot(slot.id)}
+                        className="text-[9px] text-red-400 hover:text-red-300 bg-red-900/30 px-1.5 py-0.5 rounded hover:bg-red-900/50"
+                        title="Quitar sprite"
+                      >
+                        ✕
+                      </button>
                     </div>
                   )}
-                  <div className="flex gap-1">
-                    <div className="flex-1"><span className="text-[8px] text-red-400">Off X</span><input type="number" value={slot.offset.x} onChange={e => store.updateSlot(slot.id, { offset: { ...slot.offset, x: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none" /></div>
-                    <div className="flex-1"><span className="text-[8px] text-green-400">Off Y</span><input type="number" value={slot.offset.y} onChange={e => store.updateSlot(slot.id, { offset: { ...slot.offset, y: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none" /></div>
+                  <div className="space-y-1">
+                    <div className="flex gap-1">
+                      <div className="flex-1">
+                        <label className="text-[8px] text-red-400 block">Offset X</label>
+                        <input type="number" value={slot.offset.x} onChange={e => store.updateSlot(slot.id, { offset: { ...slot.offset, x: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1.5 py-0.5 border border-gray-600 focus:border-blue-500 focus:outline-none" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[8px] text-green-400 block">Offset Y</label>
+                        <input type="number" value={slot.offset.y} onChange={e => store.updateSlot(slot.id, { offset: { ...slot.offset, y: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1.5 py-0.5 border border-gray-600 focus:border-blue-500 focus:outline-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[8px] text-gray-400 block">Opacidad: {(slot.opacity * 100).toFixed(0)}%</label>
+                      <input type="range" min="0" max="1" step="0.05" value={slot.opacity} onChange={e => store.updateSlot(slot.id, { opacity: +e.target.value })} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                    </div>
+                    <div>
+                      <label className="text-[8px] text-gray-400 block">Modo de Mezcla</label>
+                      <select value={slot.blendMode} onChange={e => store.updateSlot(slot.id, { blendMode: e.target.value as any })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1.5 py-0.5 border border-gray-600 focus:border-blue-500 focus:outline-none">
+                        <option value="normal">Normal</option>
+                        <option value="multiply">Multiply (Multiplicar)</option>
+                        <option value="screen">Screen (Pantalla)</option>
+                        <option value="overlay">Overlay (Superponer)</option>
+                        <option value="lighter">Add (Agregar)</option>
+                      </select>
+                    </div>
                   </div>
-                  <div><span className="text-[8px] text-gray-500">Opacidad</span><input type="range" min="0" max="1" step="0.05" value={slot.opacity} onChange={e => store.updateSlot(slot.id, { opacity: +e.target.value })} className="w-full h-3" /></div>
-                  <div><span className="text-[8px] text-gray-500">Blend</span>
-                    <select value={slot.blendMode} onChange={e => store.updateSlot(slot.id, { blendMode: e.target.value as any })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1 py-0.5 border border-gray-600 focus:outline-none">
-                      <option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="lighter">Add</option>
-                    </select>
+                  <div className="bg-blue-900/20 border border-blue-800/30 rounded p-1.5">
+                    <p className="text-[8px] text-blue-300 leading-tight">
+                      💡 La imagen se mueve con el hueso. Ajusta el offset para posicionarla.
+                    </p>
                   </div>
                 </div>
               );
@@ -151,7 +212,19 @@ function CharactersTab() {
             <button onClick={() => store.addBone(store.selectedBoneId)} className="text-[9px] text-blue-400 hover:text-blue-300">+ Hueso</button>
           </div>
           <div className="space-y-0.5">
-            {renderBoneTree(scene.characters.find(c => c.id === store.selectedCharacterId)?.bones || [], null, store.selectedBoneId, store.selectBone, store.removeBone, 0)}
+            {(() => {
+              const selectedChar = scene.characters.find(c => c.id === store.selectedCharacterId);
+              return renderBoneTree(
+                selectedChar?.bones || [],
+                null,
+                store.selectedBoneId,
+                store.selectBone,
+                store.removeBone,
+                0,
+                selectedChar?.slots || [],
+                store.project.assets
+              );
+            })()}
           </div>
         </div>
       )}
@@ -177,19 +250,38 @@ function CharactersTab() {
   );
 }
 
-function renderBoneTree(bones: { id: string; name: string; parentId: string | null; color: string; locked: boolean; visible: boolean }[], parentId: string | null, selectedId: string | null, selectBone: (id: string | null) => void, removeBone: (id: string) => void, depth: number) {
-  return bones.filter(b => b.parentId === parentId).map(bone => (
-    <div key={bone.id}>
-      <div className={`flex items-center gap-1 px-2 py-0.5 rounded cursor-pointer text-[11px] group ${bone.id === selectedId ? 'bg-blue-600/30 text-blue-300' : 'text-gray-300 hover:bg-gray-700/50'}`} style={{ paddingLeft: `${depth * 10 + 8}px` }} onClick={() => selectBone(bone.id)}>
-        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: bone.color }} />
-        <span className="truncate flex-1">{bone.name}</span>
-        {!bone.visible && <span className="text-[8px] text-gray-500">👁</span>}
-        {bone.locked && <span className="text-[8px]">🔒</span>}
-        <button onClick={e => { e.stopPropagation(); removeBone(bone.id); }} className="opacity-0 group-hover:opacity-100 text-red-400 text-[10px]">✕</button>
+function renderBoneTree(
+  bones: { id: string; name: string; parentId: string | null; color: string; locked: boolean; visible: boolean }[],
+  parentId: string | null,
+  selectedId: string | null,
+  selectBone: (id: string | null) => void,
+  removeBone: (id: string) => void,
+  depth: number,
+  slots: { boneId: string; assetId: string | null }[] = [],
+  assets: { id: string; name: string; src: string }[] = []
+) {
+  return bones.filter(b => b.parentId === parentId).map(bone => {
+    const slot = slots.find(s => s.boneId === bone.id);
+    const hasSprite = slot?.assetId != null;
+    const spriteAsset = hasSprite ? assets.find(a => a.id === slot!.assetId) : null;
+    
+    return (
+      <div key={bone.id}>
+        <div className={`flex items-center gap-1 px-2 py-0.5 rounded cursor-pointer text-[11px] group ${bone.id === selectedId ? 'bg-blue-600/30 text-blue-300' : 'text-gray-300 hover:bg-gray-700/50'}`} style={{ paddingLeft: `${depth * 10 + 8}px` }} onClick={() => selectBone(bone.id)}>
+          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: bone.color }} />
+          <span className="truncate flex-1">{bone.name}</span>
+          {hasSprite && spriteAsset && (
+            <img src={spriteAsset.src} alt="" className="w-3 h-3 object-contain rounded border border-blue-500/50" title={`Sprite: ${spriteAsset.name}`} />
+          )}
+          {hasSprite && !spriteAsset && <span className="text-[8px]">🖼</span>}
+          {!bone.visible && <span className="text-[8px] text-gray-500">👁</span>}
+          {bone.locked && <span className="text-[8px]">🔒</span>}
+          <button onClick={e => { e.stopPropagation(); removeBone(bone.id); }} className="opacity-0 group-hover:opacity-100 text-red-400 text-[10px]">✕</button>
+        </div>
+        {renderBoneTree(bones, bone.id, selectedId, selectBone, removeBone, depth + 1, slots, assets)}
       </div>
-      {renderBoneTree(bones, bone.id, selectedId, selectBone, removeBone, depth + 1)}
-    </div>
-  ));
+    );
+  });
 }
 
 function BackgroundsTab() {
