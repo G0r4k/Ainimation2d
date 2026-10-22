@@ -327,6 +327,7 @@ function CharactersTab() {
 function NewApiForm({ 
   models, 
   loading, 
+  error,
   provider, 
   setProvider, 
   baseUrl, 
@@ -338,6 +339,7 @@ function NewApiForm({
 }: {
   models: any[];
   loading: boolean;
+  error: string;
   provider: AgentProvider;
   setProvider: (p: AgentProvider) => void;
   baseUrl: string;
@@ -426,20 +428,54 @@ function NewApiForm({
         <div className="space-y-1">
           <label className="text-[8px] text-gray-400 flex items-center gap-1">
             <span>Modelo</span>
-            {loading && <span className="text-blue-400 animate-pulse">⏳ Cargando...</span>}
-            {!loading && models.length > 0 && <span className="text-green-400">✓ {models.length} disponibles</span>}
+            {loading && <span className="text-blue-400 animate-pulse">⏳ Conectando con {provider}...</span>}
+            {!loading && !error && models.length > 0 && <span className="text-green-400">✓ {models.length} modelos disponibles</span>}
           </label>
-          {models.length > 0 ? (
+          
+          {loading ? (
+            <div className="bg-gray-700/50 rounded px-2 py-3 text-center">
+              <div className="text-lg mb-1 animate-pulse">🔄</div>
+              <p className="text-[9px] text-gray-400">Conectando con el proveedor...</p>
+            </div>
+          ) : error ? (
+            <div className="bg-red-900/20 border border-red-700/50 rounded p-2">
+              <div className="flex items-start gap-1.5">
+                <span className="text-red-400 text-sm">❌</span>
+                <div className="flex-1">
+                  <p className="text-[9px] text-red-300 font-medium mb-1">Error de conexión</p>
+                  <p className="text-[8px] text-red-400 mb-2">{error}</p>
+                  <div className="text-[8px] text-gray-400 space-y-0.5">
+                    {provider === 'ollama' && (
+                      <>
+                        <p>• Verifica que Ollama esté ejecutándose</p>
+                        <p>• URL: {baseUrl || 'http://localhost:11434'}</p>
+                        <p>• Ejecuta: <code className="bg-gray-800 px-1 rounded">ollama serve</code></p>
+                      </>
+                    )}
+                    {provider !== 'ollama' && !apiKey && (
+                      <p>• Ingresa una API key válida</p>
+                    )}
+                    {provider !== 'ollama' && apiKey && (
+                      <>
+                        <p>• Verifica que la API key sea correcta</p>
+                        <p>• URL: {baseUrl || 'por defecto'}</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : models.length > 0 ? (
             <select 
               value={selectedModel}
               onChange={e => setSelectedModel(e.target.value)}
-              className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none"
+              className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1.5 border border-green-600/50 focus:border-green-500 focus:outline-none"
             >
               <option value="">-- Seleccionar modelo --</option>
               {models.map((model: any) => (
                 <option key={model.id} value={model.id}>
                   {model.name || model.id}
-                  {model.contextLength ? ` (${(model.contextLength / 1000).toFixed(0)}k)` : ''}
+                  {model.contextLength ? ` (${(model.contextLength / 1000).toFixed(0)}k context)` : ''}
                 </option>
               ))}
             </select>
@@ -452,11 +488,9 @@ function NewApiForm({
                 placeholder="Modelo (escribe el ID manualmente)" 
                 className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
               />
-              {!loading && (
-                <p className="text-[8px] text-yellow-400 mt-0.5">
-                  ⚠️ No se pudieron cargar los modelos. Verifica las credenciales.
-                </p>
-              )}
+              <p className="text-[8px] text-yellow-400 mt-0.5">
+                ⚠️ No se encontraron modelos disponibles
+              </p>
             </div>
           )}
         </div>
@@ -669,8 +703,10 @@ function AgentsTab() {
   const [selectedApiForTask, setSelectedApiForTask] = useState(store.agentConfig.defaultApiId || '');
   const [modelsByApi, setModelsByApi] = useState<Record<string, any[]>>({});
   const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>({});
+  const [errorsByApi, setErrorsByApi] = useState<Record<string, string>>({});
   const [newApiModels, setNewApiModels] = useState<any[]>([]);
   const [loadingNewApiModels, setLoadingNewApiModels] = useState(false);
+  const [newApiError, setNewApiError] = useState<string>('');
   const [newApiProvider, setNewApiProvider] = useState<AgentProvider>('ollama');
   const [newApiBaseUrl, setNewApiBaseUrl] = useState('');
   const [newApiKey, setNewApiKey] = useState('');
@@ -700,6 +736,8 @@ function AgentsTab() {
 
     const loadModels = async () => {
       setLoadingModels(prev => ({ ...prev, [editingApi]: true }));
+      setErrorsByApi(prev => ({ ...prev, [editingApi]: '' }));
+      
       try {
         const models = await store.fetchModelsForProvider(
           api.provider,
@@ -707,8 +745,11 @@ function AgentsTab() {
           api.baseUrl
         );
         setModelsByApi(prev => ({ ...prev, [editingApi]: models }));
+        console.log(`✓ Loaded ${models.length} models for ${api.provider}`);
       } catch (error) {
         console.error('Error loading models:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+        setErrorsByApi(prev => ({ ...prev, [editingApi]: errorMessage }));
         setModelsByApi(prev => ({ ...prev, [editingApi]: [] }));
       } finally {
         setLoadingModels(prev => ({ ...prev, [editingApi]: false }));
@@ -727,6 +768,8 @@ function AgentsTab() {
 
     const loadModels = async () => {
       setLoadingNewApiModels(true);
+      setNewApiError('');
+      
       try {
         const defaultUrls: Record<string, string> = {
           ollama: 'http://localhost:11434',
@@ -734,7 +777,7 @@ function AgentsTab() {
           groq: 'https://api.groq.com/openai/v1',
           openai: 'https://api.openai.com/v1',
           claude: 'https://api.anthropic.com/v1',
-          huggingface: 'https://api-inference.huggingface.co/models',
+          huggingface: 'https://api-inference.huggingface.co',
           opencode: 'https://api.opencode.ai/v1',
         };
         
@@ -744,8 +787,11 @@ function AgentsTab() {
           newApiBaseUrl || defaultUrls[newApiProvider]
         );
         setNewApiModels(models);
+        console.log(`✓ Loaded ${models.length} models for new ${newApiProvider} API`);
       } catch (error) {
         console.error('Error loading models:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+        setNewApiError(errorMessage);
         setNewApiModels([]);
       } finally {
         setLoadingNewApiModels(false);
@@ -848,6 +894,7 @@ function AgentsTab() {
                   {(() => {
                     const models = modelsByApi[editingApi] || [];
                     const isLoading = loadingModels[editingApi];
+                    const error = errorsByApi[editingApi];
                     const providersWithListing = ['ollama', 'openrouter', 'groq', 'openai', 'claude', 'huggingface', 'opencode'];
                     const hasListing = providersWithListing.includes(api.provider);
                     
@@ -861,20 +908,64 @@ function AgentsTab() {
                       <div className="space-y-1">
                         <label className="text-[8px] text-gray-400 flex items-center gap-1">
                           <span>Modelo</span>
-                          {isLoading && <span className="text-blue-400 animate-pulse">⏳ Cargando...</span>}
-                          {!isLoading && models.length > 0 && <span className="text-green-400">✓ {models.length} disponibles</span>}
+                          {isLoading && <span className="text-blue-400 animate-pulse">⏳ Conectando con {api.provider}...</span>}
+                          {!isLoading && !error && models.length > 0 && <span className="text-green-400">✓ {models.length} modelos disponibles</span>}
                         </label>
-                        {models.length > 0 ? (
+                        
+                        {isLoading ? (
+                          <div className="bg-gray-700/50 rounded px-2 py-3 text-center">
+                            <div className="text-lg mb-1 animate-pulse">🔄</div>
+                            <p className="text-[9px] text-gray-400">Conectando con el proveedor...</p>
+                          </div>
+                        ) : error ? (
+                          <div className="bg-red-900/20 border border-red-700/50 rounded p-2">
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-red-400 text-sm">❌</span>
+                              <div className="flex-1">
+                                <p className="text-[9px] text-red-300 font-medium mb-1">Error de conexión</p>
+                                <p className="text-[8px] text-red-400 mb-2">{error}</p>
+                                <div className="text-[8px] text-gray-400 space-y-0.5">
+                                  {api.provider === 'ollama' && (
+                                    <>
+                                      <p>• Verifica que Ollama esté ejecutándose</p>
+                                      <p>• URL: {api.baseUrl || 'http://localhost:11434'}</p>
+                                      <p>• Ejecuta: <code className="bg-gray-800 px-1 rounded">ollama serve</code></p>
+                                    </>
+                                  )}
+                                  {api.provider !== 'ollama' && !api.apiKey && (
+                                    <p>• Ingresa una API key válida</p>
+                                  )}
+                                  {api.provider !== 'ollama' && api.apiKey && (
+                                    <>
+                                      <p>• Verifica que la API key sea correcta</p>
+                                      <p>• URL: {api.baseUrl}</p>
+                                    </>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    // Forzar recarga
+                                    setEditingApi(null);
+                                    setTimeout(() => setEditingApi(api.id), 100);
+                                  }}
+                                  className="mt-2 text-[9px] bg-red-600/30 text-red-300 px-2 py-1 rounded hover:bg-red-600/50"
+                                >
+                                  🔄 Reintentar
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : models.length > 0 ? (
                           <select 
                             value={api.model} 
                             onChange={e => store.updateAgentAPI(api.id, { model: e.target.value })} 
-                            className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none max-h-40"
+                            className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1.5 border border-green-600/50 focus:border-green-500 focus:outline-none"
                           >
                             <option value="">-- Seleccionar modelo --</option>
                             {models.map((model: any) => (
                               <option key={model.id} value={model.id}>
                                 {model.name || model.id}
-                                {model.contextLength ? ` (${(model.contextLength / 1000).toFixed(0)}k)` : ''}
+                                {model.contextLength ? ` (${(model.contextLength / 1000).toFixed(0)}k context)` : ''}
                               </option>
                             ))}
                           </select>
@@ -887,11 +978,9 @@ function AgentsTab() {
                               placeholder="Modelo (escribe el ID manualmente)" 
                               className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-2 py-1 border border-gray-600 focus:outline-none" 
                             />
-                            {!isLoading && (
-                              <p className="text-[8px] text-yellow-400 mt-0.5">
-                                ⚠️ No se pudieron cargar los modelos. Verifica las credenciales.
-                              </p>
-                            )}
+                            <p className="text-[8px] text-yellow-400 mt-0.5">
+                              ⚠️ No se encontraron modelos disponibles
+                            </p>
                           </div>
                         )}
                       </div>
@@ -916,6 +1005,7 @@ function AgentsTab() {
           <NewApiForm 
             models={newApiModels}
             loading={loadingNewApiModels}
+            error={newApiError}
             provider={newApiProvider}
             setProvider={setNewApiProvider}
             baseUrl={newApiBaseUrl}
@@ -926,6 +1016,7 @@ function AgentsTab() {
               store.addAgentAPI(data);
               setNewApi(false);
               setNewApiModels([]);
+              setNewApiError('');
               setNewApiProvider('ollama');
               setNewApiBaseUrl('');
               setNewApiKey('');
@@ -933,6 +1024,7 @@ function AgentsTab() {
             onCancel={() => {
               setNewApi(false);
               setNewApiModels([]);
+              setNewApiError('');
             }}
           />
         )}
