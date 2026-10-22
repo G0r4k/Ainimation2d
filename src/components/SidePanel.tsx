@@ -130,6 +130,75 @@ export function SidePanel() {
                         <input type="number" value={slot.offset.y} onChange={e => store.updateSlot(slot.id, { offset: { ...slot.offset, y: +e.target.value } })} className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1.5 py-0.5 border border-gray-600 focus:border-blue-500 focus:outline-none" />
                       </div>
                     </div>
+                    
+                    {/* Dimensiones del Sprite */}
+                    {asset && (
+                    <div className="bg-purple-900/20 border border-purple-800/30 rounded p-1.5 space-y-1">
+                      <label className="text-[8px] text-purple-300 font-semibold block">📐 Dimensiones del Sprite</label>
+                      <div className="flex gap-1">
+                        <div className="flex-1">
+                          <label className="text-[8px] text-red-400 block">Ancho</label>
+                          <input 
+                            type="number" 
+                            value={Math.round(asset.width * slot.scale.x)} 
+                            onChange={e => store.updateSlot(slot.id, { scale: { ...slot.scale, x: +e.target.value / asset.width } })} 
+                            className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1.5 py-0.5 border border-gray-600 focus:border-blue-500 focus:outline-none" 
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[8px] text-green-400 block">Alto</label>
+                          <input 
+                            type="number" 
+                            value={Math.round(asset.height * slot.scale.y)} 
+                            onChange={e => store.updateSlot(slot.id, { scale: { ...slot.scale, y: +e.target.value / asset.height } })} 
+                            className="w-full bg-gray-700 text-gray-200 text-[10px] rounded px-1.5 py-0.5 border border-gray-600 focus:border-blue-500 focus:outline-none" 
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[8px] text-gray-400 block">Escala Uniforme: {(slot.scale.x * 100).toFixed(0)}%</label>
+                        <input 
+                          type="range" 
+                          min="10" 
+                          max="300" 
+                          step="5" 
+                          value={slot.scale.x * 100} 
+                          onChange={e => {
+                            const newScale = +e.target.value / 100;
+                            store.updateSlot(slot.id, { scale: { x: newScale, y: newScale } });
+                          }} 
+                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" 
+                        />
+                      </div>
+                      <div className="flex gap-1">
+                        <button 
+                          onClick={() => store.updateSlot(slot.id, { scale: { x: 0.5, y: 0.5 } })}
+                          className="flex-1 text-[8px] bg-gray-700 text-gray-300 rounded px-1 py-0.5 hover:bg-gray-600"
+                        >
+                          50%
+                        </button>
+                        <button 
+                          onClick={() => store.updateSlot(slot.id, { scale: { x: 1, y: 1 } })}
+                          className="flex-1 text-[8px] bg-gray-700 text-gray-300 rounded px-1 py-0.5 hover:bg-gray-600"
+                        >
+                          100%
+                        </button>
+                        <button 
+                          onClick={() => store.updateSlot(slot.id, { scale: { x: 1.5, y: 1.5 } })}
+                          className="flex-1 text-[8px] bg-gray-700 text-gray-300 rounded px-1 py-0.5 hover:bg-gray-600"
+                        >
+                          150%
+                        </button>
+                        <button 
+                          onClick={() => store.updateSlot(slot.id, { scale: { x: 2, y: 2 } })}
+                          className="flex-1 text-[8px] bg-gray-700 text-gray-300 rounded px-1 py-0.5 hover:bg-gray-600"
+                        >
+                          200%
+                        </button>
+                      </div>
+                    </div>
+                    )}
+                    
                     <div>
                       <label className="text-[8px] text-gray-400 block">Opacidad: {(slot.opacity * 100).toFixed(0)}%</label>
                       <input type="range" min="0" max="1" step="0.05" value={slot.opacity} onChange={e => store.updateSlot(slot.id, { opacity: +e.target.value })} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />

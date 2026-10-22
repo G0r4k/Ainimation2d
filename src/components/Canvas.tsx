@@ -145,6 +145,11 @@ export function Canvas() {
         const asset = store.project.assets.find(a => a.id === slot.assetId);
         if (!asset) return;
         drawSlot(ctx, slot, bone, asset);
+        
+        // Draw selection box for selected bone's sprite
+        if (bone.id === store.selectedBoneId) {
+          drawSpriteSelectionBox(ctx, slot, bone, asset);
+        }
       });
 
       // Draw indicators on bones that have sprites
@@ -263,6 +268,51 @@ export function Canvas() {
         if (bone) {
           const angle = Math.atan2(mouseY - bone.globalTransform.position.y, mouseX - bone.globalTransform.position.x);
           store.updateBoneTransform(store.selectedBoneId, { rotation: angle });
+        }
+      }
+    } else if (store.tool === 'scale' && store.selectedBoneId) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left - store.panOffset.x) / store.zoom;
+      const mouseY = (e.clientY - rect.top - store.panOffset.y) / store.zoom;
+      const char = store.getActiveCharacter();
+      if (char) {
+        const bone = char.bones.find(b => b.id === store.selectedBoneId);
+        const slot = char.slots.find(s => s.boneId === store.selectedBoneId);
+        if (bone && slot) {
+          // Calcular distancia desde el hueso al mouse
+          const dx = mouseX - bone.globalTransform.position.x;
+          const dy = mouseY - bone.globalTransform.position.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          // Usar la distancia inicial como referencia
+          const initialDx = dragStart.x - bone.globalTransform.position.x;
+          const initialDy = dragStart.y - bone.globalTransform.position.y;
+          const initialDistance = Math.sqrt(initialDx * initialDx + initialDy * initialDy);
+          
+          if (initialDistance > 0) {
+            const scaleFactor = distance / initialDistance;
+            const newScale = Math.max(0.1, Math.min(5, slot.scale.x * scaleFactor));
+            store.updateSlot(slot.id, { scale: { x: newScale, y: newScale } });
+            setDragStart({ x: mouseX, y: mouseY });
+          }
+        } else if (bone) {
+          // Si no hay sprite, escalar el hueso
+          const dx = mouseX - bone.globalTransform.position.x;
+          const dy = mouseY - bone.globalTransform.position.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          const initialDx = dragStart.x - bone.globalTransform.position.x;
+          const initialDy = dragStart.y - bone.globalTransform.position.y;
+          const initialDistance = Math.sqrt(initialDx * initialDx + initialDy * initialDy);
+          
+          if (initialDistance > 0) {
+            const scaleFactor = distance / initialDistance;
+            const newScale = Math.max(0.1, Math.min(5, bone.localTransform.scale.x * scaleFactor));
+            store.updateBoneTransform(store.selectedBoneId, { scale: { x: newScale, y: newScale } });
+            setDragStart({ x: mouseX, y: mouseY });
+          }
         }
       }
     } else {
@@ -478,6 +528,53 @@ function drawSlot(
   const drawWidth = asset.width;
   const drawHeight = asset.height;
   ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  
+  ctx.restore();
+}
+
+function drawSpriteSelectionBox(
+  ctx: CanvasRenderingContext2D,
+  slot: { offset: { x: number; y: number }; scale: { x: number; y: number }; rotation: number },
+  bone: Bone,
+  asset: { width: number; height: number }
+) {
+  ctx.save();
+  
+  // Apply bone transform
+  ctx.translate(bone.globalTransform.position.x + slot.offset.x, bone.globalTransform.position.y + slot.offset.y);
+  ctx.rotate(bone.globalTransform.rotation + slot.rotation);
+  
+  const drawWidth = asset.width * bone.globalTransform.scale.x * slot.scale.x;
+  const drawHeight = asset.height * bone.globalTransform.scale.y * slot.scale.y;
+  
+  // Draw selection box
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.strokeRect(-drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  ctx.setLineDash([]);
+  
+  // Draw corner handles
+  const handleSize = 6;
+  ctx.fillStyle = '#3b82f6';
+  const corners = [
+    { x: -drawWidth / 2, y: -drawHeight / 2 },
+    { x: drawWidth / 2, y: -drawHeight / 2 },
+    { x: drawWidth / 2, y: drawHeight / 2 },
+    { x: -drawWidth / 2, y: drawHeight / 2 },
+  ];
+  
+  corners.forEach(corner => {
+    ctx.fillRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
+  });
+  
+  // Draw size label
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+  ctx.fillRect(-drawWidth / 2, -drawHeight / 2 - 20, 80, 16);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${Math.round(drawWidth)}×${Math.round(drawHeight)}`, -drawWidth / 2 + 4, -drawHeight / 2 - 8);
   
   ctx.restore();
 }
