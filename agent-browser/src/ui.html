@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- UI humana deliberadamente mínima: solo estado crudo y stream de acciones.
+<!-- UI humana deliberadamente mínima: monitor de solo lectura de lo que hace el agente.
+     Incluye vista previa en vivo del navegador (frames JPEG por WebSocket).
      No es un navegador para humanos; es una ventana de observación. -->
 <html lang="es">
 <head>
@@ -12,16 +13,126 @@
   .note { color:#6e7681; font-size:12px; }
   table { border-collapse: collapse; width:100%; }
   td, th { text-align:left; padding:2px 8px; border-bottom:1px solid #21262d; font-weight:normal; }
+  .layout { display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap; }
+  .left { flex:1 1 640px; max-width:960px; }
+  .right { flex:1 1 320px; }
+  #screen { position:relative; width:100%; aspect-ratio:1280/900; background:#000;
+            border:1px solid #30363d; border-radius:4px; overflow:hidden; }
+  #shot { width:100%; height:100%; object-fit:contain; image-rendering:auto; }
+  #overlay { position:absolute; inset:0; pointer-events:none; }
+  #ring { position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%;
+          border:2px solid #ff8080; background:rgba(255,64,64,.25); display:none; transition:all 80ms linear; }
+  #ring.down { border-color:#6db3ff; background:rgba(64,160,255,.4); transform:scale(1.5); }
+  #caption { padding:.4rem .6rem; background:#161b22; border:1px solid #30363d; border-top:none;
+             border-radius:0 0 4px 4px; font-size:12px; word-break:break-all; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; margin-left:.5rem; }
+  .live { background:#1f3b24; color:#6ee88a; } .idle { background:#3b1f1f; color:#e88a6e; }
+  button { background:#21262d; color:#c9d1d9; border:1px solid #30363d; border-radius:4px;
+           padding:3px 10px; font:inherit; cursor:pointer; }
+  #hist td:first-child { color:#6e7681; white-space:nowrap; }
 </style>
 </head>
 <body>
 <h1>agent-browser — modo agente (API) · esta vista es solo lectura</h1>
-<p class="note">Interfaz primario: <code>POST /api/&lt;op&gt;</code> o WebSocket <code>/ws</code>. Ejecuta <code>ab help</code> para el catálogo de operaciones.</p>
-<pre id="status">cargando…</pre>
-<h1 style="margin-top:1rem">historial de acciones del agente</h1>
-<table id="hist"><thead><tr><th>hora</th><th>acción</th><th>objetivo</th></tr></thead><tbody></tbody></table>
+<p class="note">Interfaz primario: <code>POST /api/&lt;op&gt;</code> o WebSocket <code>/ws</code>. Esta página consume el canal de monitoreo <code>/ws?monitor=1</code>.</p>
+
+<div class="layout">
+  <div class="left">
+    <h1>vista previa del navegador <span id="state" class="pill idle">sin conexión</span></h1>
+    <div id="screen">
+      <img id="shot" alt="vista previa" style="display:none">
+      <div id="overlay"><div id="ring"></div></div>
+    </div>
+    <div id="caption">esperando frames… <button id="pause" style="display:none">pausar stream</button></div>
+  </div>
+  <div class="right">
+    <h1>estado</h1>
+    <pre id="status">cargando…</pre>
+    <h1 style="margin-top:1rem">historial de acciones del agente</h1>
+    <table id="hist"><thead><tr><th>hora</th><th>acción</th><th>objetivo</th></tr></thead><tbody></tbody></table>
+  </div>
+</div>
+
 <script>
-async function refresh() {
+const shot = document.getElementById('shot');
+const ring = document.getElementById('ring');
+const caption = document.getElementById('caption');
+const statePill = document.getElementById('state');
+const pauseBtn = document.getElementById('pause');
+const histBody = document.querySelector('#hist tbody');
+let paused = false, lastFrameAt = 0, ws = null, retry = 0;
+
+function fmtTarget(a) {
+  const parts = [];
+  if (a.ref) parts.push(a.ref);
+  if (a.target) parts.push(JSON.stringify(a.target));
+  if (a.to) parts.push('→' + JSON.stringify(a.to));
+  if (a.url) parts.push(a.url);
+  if (a.query) parts.push('"' + a.query + '"');
+  if (a.value !== undefined && typeof a.value === 'string') parts.push('"' + a.value.slice(0,40) + '"');
+  if (a.key) parts.push(a.key);
+  if (a.path) parts.push('⇒' + a.path.split('/').pop());
+  if (a.saved !== undefined) parts.push(a.saved + ' imgs');
+  if (a.result && typeof a.result === 'string') parts.push(a.result.slice(0,60));
+  return parts.join(' ');
+}
+
+function pushAction(a) {
+  const tr = document.createElement('tr');
+  const t = new Date(a.at).toLocaleTimeString();
+  tr.innerHTML = '<td>' + t + '</td><td>' + a.action + '</td><td>' + fmtTarget(a) + '</td>';
+  histBody.prepend(tr);
+  while (histBody.children.length > 50) histBody.lastChild.remove();
+}
+
+function showFrame(f) {
+  if (paused || !f.jpeg) return;
+  shot.src = 'data:image/jpeg;base64,' + f.jpeg;
+  shot.style.display = 'block';
+  const sc = f.scale || 0.75;
+  if (f.mouse) {
+    ring.style.display = 'block';
+    ring.style.left = (f.mouse.x * sc) + 'px';
+    ring.style.top = (f.mouse.y * sc) + 'px';
+  }
+  lastFrameAt = Date.now();
+  caption.firstChild.textContent = (f.title ? f.title + ' · ' : '') + (f.url || '') + ' ';
+  statePill.textContent = 'en vivo';
+  statePill.className = 'pill live';
+  pauseBtn.style.display = 'inline-block';
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws?monitor=1');
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.event === 'preview') showFrame(m);
+    else if (m.event === 'action') pushAction(m.action);
+  };
+  ws.onclose = () => {
+    statePill.textContent = 'reintentando…'; statePill.className = 'pill idle';
+    setTimeout(connect, Math.min(8000, 500 * (2 ** retry++)));
+  };
+  ws.onerror = () => ws.close();
+}
+connect();
+
+// si no llegan frames pero hay actividad, recargar el último frame vía HTTP
+setInterval(() => {
+  if (!paused && Date.now() - lastFrameAt > 5000) {
+    fetch('/api/status').then(r => r.json()).then(s => {
+      if (s.running) { shot.src = '/preview.jpg?t=' + Date.now(); shot.style.display = 'block'; }
+    }).catch(() => {});
+  }
+}, 5000);
+
+pauseBtn.onclick = () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'reanudar stream' : 'pausar stream';
+};
+
+async function refreshStatus() {
   try {
     const s = await (await fetch('/api/status')).json();
     document.getElementById('status').textContent = JSON.stringify(s, null, 2);
@@ -29,7 +140,7 @@ async function refresh() {
     document.getElementById('status').textContent = 'servidor no disponible: ' + e;
   }
 }
-refresh(); setInterval(refresh, 2000);
+refreshStatus(); setInterval(refreshStatus, 2000);
 </script>
 </body>
 </html>

@@ -10,7 +10,7 @@ import { AgentBrowser } from './core/browser.js';
 
 const browser = new AgentBrowser();
 const rl = readline.createInterface({ input: process.stdin });
-const ALLOWED = ['goto','snapshot','text','click','fill','select','check','press','scroll','eval','screenshot','back','forward','saveState','logs','close'];
+const ALLOWED = ['goto','snapshot','text','click','fill','select','check','press','scroll','eval','screenshot','back','forward','saveState','logs','close','images','saveImage','searchImages','download','resolveRef','mouseMove','humanClick','hover','drag','wheel','typeText','keyCombo','clickToDownload','gesture','grabPreview','startPreviewLoop','stopPreviewLoop'];
 
 // cola serial: los comandos se ejecutan en el orden recibido (crítico para que
 // un snapshot complete antes del click que usa sus refs)

@@ -17,6 +17,7 @@ export const SNAPSHOT_SCRIPT = `(() => {
   const LANDMARKS = 'main,nav,header,footer,aside,section[aria-label],form[aria-label],[role=main],[role=navigation]';
   const out = [];
   let refN = 0;
+  const refMap = {};
   const isVisible = (el) => {
     if (el.disabled) return false;
     const st = window.getComputedStyle(el);
@@ -52,6 +53,9 @@ export const SNAPSHOT_SCRIPT = `(() => {
     if (name) parts.push(JSON.stringify(name));
     if (el.type) parts.push('type=' + el.type);
     if (el.href) parts.push('href=' + el.href);
+    // exponer la URL real de las imagenes: el agente puede hacer save eN sin selectores
+    const imgSrc = tag === 'img' ? (el.currentSrc || el.src) : (el.querySelector?.(':scope > img')?.currentSrc || el.querySelector?.(':scope > img')?.src);
+    if (imgSrc && !String(imgSrc).startsWith('data:')) parts.push('img=' + String(imgSrc).slice(0, 300));
     if (el.name) parts.push('name=' + el.name);
     if (el.value != null && el.type !== 'password' && String(el.value)) parts.push('value=' + JSON.stringify(String(el.value).slice(0, 80)));
     if (el.checked) parts.push('checked');
@@ -76,6 +80,17 @@ export const SNAPSHOT_SCRIPT = `(() => {
       const node = lineFor(el, el.getAttribute('role') || (el.tagName === 'A' ? 'link' : el.tagName === 'INPUT' ? 'textbox' : el.tagName.toLowerCase()));
       if (!node.visible) node.line += ' [hidden]';
       entry.interNode = node;
+    }
+    // imágenes con contenido real: se referencian aunque no sean "interactivas",
+    // para que el agente pueda hacer save eN directamente sobre ellas
+    if (!entry.interNode && el.tagName === 'IMG' && !el.hasAttribute('data-ab-ref')) {
+      const src = el.currentSrc || el.src || '';
+      const big = (el.naturalWidth || 0) * (el.naturalHeight || 0) >= 10000;
+      if (src && !src.startsWith('data:') && (big || el.closest('a[href],button'))) {
+        const node = lineFor(el, 'img');
+        if (!node.visible) node.line += ' [hidden]';
+        entry.interNode = node;
+      }
     }
     // texto plano solo en hojas no interactivas con contenido breve
     if (!entry.line && !entry.interNode && el.children.length === 0) {
@@ -105,6 +120,7 @@ export const SNAPSHOT_SCRIPT = `(() => {
     url: location.href,
     title: document.title,
     refs: refN,
+    refMap,
     lines,
     viewport: { w: innerWidth, h: innerHeight },
     scroll: { y: scrollY, maxY: document.body.scrollHeight },

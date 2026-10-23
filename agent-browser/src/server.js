@@ -18,8 +18,14 @@ const browser = new AgentBrowser();
 const history = []; // últimas acciones ejecutadas, visibles en la UI humana
 
 function record(entry) {
-  history.push({ ...entry, at: new Date().toISOString() });
+  const e = { ...entry, at: new Date().toISOString() };
+  history.push(e);
   if (history.length > 100) history.shift();
+  // notificar a los monitores humanos conectados (acción + frame fresco)
+  for (const ws of browser.previewClients) {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ event: 'action', action: e }));
+  }
+  browser._previewTick();
 }
 
 async function handleApi(req, res, url) {
@@ -46,11 +52,37 @@ async function handleApi(req, res, url) {
       case 'scroll':     { const r = await browser.scroll(body.dir, body.amount); return send(200, r); }
       case 'eval':       { const r = await browser.eval(body.code || ''); return send(200, r); }
       case 'screenshot': { const r = await browser.screenshot(body.path || path.join(__dirname, '..', 'shot.png')); return send(200, r); }
+      case 'images':     { const r = await browser.images({ minArea: (Number(body.minPx) || 0) ** 2 }); return send(200, r); }
+      case 'save_image': { const r = await browser.saveImage(body.target, body); record({ action: 'save_image', target: body.target, path: r.path }); return send(200, r); }
+      case 'imgsearch':  { const r = await browser.searchImages(String(body.query || ''), body); record({ action: 'imgsearch', query: body.query, saved: r.saved?.length }); return send(200, r); }
+      case 'fetch':      { const r = await browser.download(body.url, body); record({ action: 'fetch', url: body.url, path: r.path }); return send(200, r); }
+      case 'resolve':    { return send(200, await browser.resolveRef(body.ref)); }
+      // ---- navegación humana (ratón/teclado realistas) ----
+      case 'mouse_move':  { const r = await browser.mouseMove(Number(body.x), Number(body.y), body); record({ action: 'mouse_move', to: [body.x, body.y] }); return send(200, r); }
+      case 'human_click': { const r = await browser.humanClick(body.ref ?? body.target ?? body, body); record({ action: 'human_click', target: body.ref || body.target || [body.x, body.y], result: r.url }); return send(200, r); }
+      case 'hover':       { const r = await browser.hover(body.ref ?? body); record({ action: 'hover', target: body.ref ?? [body.x, body.y] }); return send(200, r); }
+      case 'drag':        { return send(200, await browser.drag(body.from, body.to, body)); }
+      case 'wheel':       { return send(200, await browser.wheel(Number(body.dy) || 0, body)); }
+      case 'type':        { const r = await browser.typeText(String(body.text ?? ''), body); record({ action: 'type', ref: body.ref, chars: String(body.text ?? '').length }); return send(200, r); }
+      case 'keys':        { return send(200, await browser.keyCombo(body.keys)); }
+      case 'dclick':      { const r = await browser.clickToDownload(body.target ?? body.ref, body); record({ action: 'dclick', target: body.target || body.ref, path: r.path }); return send(200, r); }
+      case 'gesture':     { const r = await browser.gesture(body.name, body.arg); record({ action: 'gesture', name: body.name }); return send(200, r); }
       case 'back':       { return send(200, await browser.back()); }
       case 'forward':    { return send(200, await browser.forward()); }
       case 'logs':       { return send(200, browser.logs(body)); }
       case 'state':      { return send(200, await browser.saveState()); }
-      case 'status':     { return send(200, { running: !!browser.page, url: browser.page?.url() ?? null, actions: history.length }); }
+      case 'status':     { return send(200, { running: !!browser.page, url: browser.page?.url() ?? null, actions: history.length, previewClients: browser.previewClients.size }); }
+      // ---- vista previa (consumida por el monitor humano; también útil a agentes) ----
+      case 'preview':    { const f = await browser.grabPreview(body); delete f.jpeg; return send(200, { ...f, hasFrame: !!browser.previewFrame }); }
+      case 'preview_frame': {
+        const f = browser.previewFrame || (await browser.grabPreview(body));
+        if (body.raw === true || url.searchParams.get('raw') === '1') {
+          res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store' });
+          return res.end(Buffer.from(f.jpeg, 'base64'));
+        }
+        return send(200, f);
+      }
+      case 'preview_loop':  { return send(200, body.on === false ? browser.stopPreviewLoop() : browser.startPreviewLoop(Number(body.fps) || 2)); }
       case 'close':      { record({ action: 'close' }); return send(200, await browser.close()); }
       default:           { return send(404, { ok: false, error: `ruta desconocida: /api/${route}` }); }
     }
@@ -68,13 +100,32 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(UI_HTML);
   }
+  if (url.pathname === '/preview.jpg') { // snapshot JPEG directo para humanos (<img>)
+    try {
+      const f = await browser.grabPreview({});
+      res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store' });
+      return res.end(Buffer.from(f.jpeg, 'base64'));
+    } catch (e) {
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
+      return res.end(String(e.message || e));
+    }
+  }
   if (url.pathname === '/health') { res.writeHead(200); return res.end('ok'); }
   res.writeHead(404); res.end('not found');
 });
 
 // WebSocket: los agentes pueden mantener sesión persistente y recibir eventos.
-const wss = new WebSocketServer({ server, path: '/ws' });
-wss.on('connection', (ws) => {
+const wss = new WebSocketServer({ server });
+wss.on('connection', (ws, req) => {
+  const isMonitor = new URL(req.url, 'http://x').searchParams.get('monitor') === '1';
+  if (isMonitor) {
+    // ---- canal del monitor humano: solo lectura, recibe frames + acciones ----
+    browser.previewClients.add(ws);
+    ws.send(JSON.stringify({ event: 'hello', role: 'monitor' }));
+    if (browser.previewFrame) ws.send(JSON.stringify({ event: 'preview', ...browser.previewFrame }));
+    ws.on('close', () => browser.previewClients.delete(ws));
+    return;
+  }
   ws.send(JSON.stringify({ event: 'hello', protocol: 'agent-browser/1', endpoints: ['/api/*', '/ws'] }));
   ws.on('message', async (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return ws.send(JSON.stringify({ ok: false, error: 'JSON inválido' })); }
